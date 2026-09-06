@@ -7,6 +7,10 @@
 
 **OmaRank** is a hardware benchmarking and tier-ranking plugin for the [Omarchy](https://omarchy.org) desktop environment. Built with a high-performance **Rust engine**, it benchmarks your silicon, assigns a humorous title from the **OmaRank Tier Ladder**, renders a sleek Quickshell bar widget with an interactive popover, and provides an opt-in anonymous hardware survey hub (**OmaStat**).
 
+<p align="center">
+  <img src="preview.png" alt="OmaRank Quickshell Bar Widget & Popover" width="480">
+</p>
+
 ---
 
 ## 🌟 Highlights
