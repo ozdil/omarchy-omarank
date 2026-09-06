@@ -16,9 +16,14 @@ pub struct OmaStatPayload {
     pub gpu_model: String,
     pub gpu_driver: String,
     pub ram_gb: f64,
+    pub ram_type: String,
+    pub ram_speed_mts: u32,
+    pub mobo_name: String,
+    pub chipset: String,
     pub primary_display: String,
     pub display_count: usize,
     pub storage_type: String,
+    pub storage_model: String,
     pub os_name: String,
 }
 
@@ -84,7 +89,7 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
     };
 
     OmaStatPayload {
-        schema_version: 1,
+        schema_version: 2,
         timestamp_epoch: epoch,
         omarank_score: result.total_score,
         tier_name: result.tier_name.clone(),
@@ -94,9 +99,14 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
         gpu_model: result.hardware.gpu_name.clone(),
         gpu_driver: result.hardware.gpu_driver.clone(),
         ram_gb: result.hardware.ram_total_gb,
+        ram_type: result.hardware.ram_type.clone(),
+        ram_speed_mts: result.hardware.ram_speed_mts,
+        mobo_name: result.hardware.mobo_name.clone(),
+        chipset: result.hardware.chipset.clone(),
         primary_display,
         display_count: result.hardware.monitors.len(),
         storage_type: result.hardware.storage_type.clone(),
+        storage_model: result.hardware.storage_model.clone(),
         os_name: result.hardware.os_name.clone(),
     }
 }

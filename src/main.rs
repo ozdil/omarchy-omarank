@@ -33,7 +33,7 @@ fn main() {
     }
 
     if args.iter().any(|a| a == "--ladder") {
-        print_ladder();
+        print_ladder(&result);
         return;
     }
 
@@ -74,6 +74,7 @@ fn print_bar_status(res: &score::OmaRankResult) {
         "tier": res.tier_name,
         "color": res.tier_color,
         "icon": res.tier_icon,
+        "nerd_icon": res.tier_nerd_icon,
     });
 
     println!("{}", serde_json::to_string(&status_json).unwrap_or_default());
@@ -84,26 +85,29 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
     println!("\x1b[1;35m║\x1b[0m  🏆 \x1b[1;37mOMARANK\x1b[0m • \x1b[1;36mOmarchy Hardware Benchmark & Community Survey Hub\x1b[0m         \x1b[1;35m║\x1b[0m");
     println!("\x1b[1;35m╚══════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
 
-    println!("  \x1b[1;33m⭐ TOTAL OMASCORE:\x1b[0m  \x1b[1;32m{}/100\x1b[0m", res.total_score);
-    println!("  \x1b[1;34m🏅 RANK TIER:\x1b[0m       {} \x1b[1;37m{}\x1b[0m", res.tier_icon, res.tier_name);
-    println!("  \x1b[1;90m💬 CRITIC QUOTE:\x1b[0m    \"{}\"\n", res.tier_quote);
+    println!("  \x1b[1;33m⭐ TOTAL OMASCORE:\x1b[0m      \x1b[1;32m{}/100\x1b[0m", res.total_score);
+    println!("  \x1b[1;34m🏅 RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m", res.tier_nerd_icon, res.tier_name);
+    println!("  \x1b[1;36m🌐 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} battlestations ({})", res.global_rank, res.total_machines, res.percentile_text);
+    println!("  \x1b[1;90m💬 CRITIC QUOTE:\x1b[0m        \"{}\"\n", res.tier_quote);
 
     println!("  \x1b[1;37m📊 Hardware Component Score Breakdown:\x1b[0m");
     println!("  • Processor (CPU):     {:>3}/100 {}", res.sub_scores.cpu, render_bar(res.sub_scores.cpu));
     println!("  • Graphics  (GPU):     {:>3}/100 {}", res.sub_scores.gpu, render_bar(res.sub_scores.gpu));
     println!("  • Memory    (RAM):     {:>3}/100 {}", res.sub_scores.ram, render_bar(res.sub_scores.ram));
+    println!("  • Motherboard (Mobo):  {:>3}/100 {}", res.sub_scores.mobo, render_bar(res.sub_scores.mobo));
     println!("  • Display   (Monitor): {:>3}/100 {}", res.sub_scores.display, render_bar(res.sub_scores.display));
     println!("  • Storage   (Disk):    {:>3}/100 {}\n", res.sub_scores.storage, render_bar(res.sub_scores.storage));
 
     println!("  \x1b[1;37m💻 Detected Hardware Specifications:\x1b[0m");
-    println!("  • Processor: {} ({} Cores, {} Threads)", res.hardware.cpu_name, res.hardware.cpu_cores, res.hardware.cpu_threads);
-    println!("  • Graphics:  {} [Driver: {}]", res.hardware.gpu_name, res.hardware.gpu_driver);
-    println!("  • Memory:    {:.1} GB Total System RAM", res.hardware.ram_total_gb);
+    println!("  • Processor:   {} ({} Cores, {} Threads)", res.hardware.cpu_name, res.hardware.cpu_cores, res.hardware.cpu_threads);
+    println!("  • Graphics:    {} [Driver: {}]", res.hardware.gpu_name, res.hardware.gpu_driver);
+    println!("  • Motherboard: {} {} (Chipset: {}, BIOS: {})", res.hardware.mobo_vendor, res.hardware.mobo_name, res.hardware.chipset, res.hardware.mobo_bios);
+    println!("  • Memory:      {:.1} GB {} @ {} MT/s ({} populated slots)", res.hardware.ram_total_gb, res.hardware.ram_type, res.hardware.ram_speed_mts, res.hardware.ram_modules);
     if let Some(m) = res.hardware.monitors.first() {
-        println!("  • Display:   {} ({}x{} @ {:.0}Hz)", m.name, m.width, m.height, m.refresh_rate);
+        println!("  • Display:     {} ({}x{} @ {:.0}Hz)", m.name, m.width, m.height, m.refresh_rate);
     }
-    println!("  • Storage:   {}", res.hardware.storage_type);
-    println!("  • OS:        {}\n", res.hardware.os_name);
+    println!("  • Storage:     {} ({})", res.hardware.storage_model, res.hardware.storage_type);
+    println!("  • OS:          {}\n", res.hardware.os_name);
 
     println!("  \x1b[1;36m🌐 OmaStat Community Ranking:\x1b[0m");
     println!("  • {}", res.percentile_text);
@@ -117,21 +121,40 @@ fn render_bar(score: u32) -> String {
     format!("\x1b[32m[{}{}]\x1b[0m", "█".repeat(filled), "░".repeat(empty))
 }
 
-fn print_ladder() {
-    println!("\x1b[1;35mOmarchy OmaRank Tier Ladder:\x1b[0m\n");
+fn print_ladder(res: &score::OmaRankResult) {
+    println!("\x1b[1;32m╔════════════════════════════════════════════════════════════════════════════════════════════╗\x1b[0m");
+    println!("\x1b[1;32m║\x1b[0m  🌐 \x1b[1;37mOMASTAT GLOBAL HARDWARE LADDER & TIER LIST\x1b[0m ({} Active Battlestations)             \x1b[1;32m║\x1b[0m", res.total_machines);
+    println!("\x1b[1;32m╚════════════════════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
+
     let tiers = [
-        ("96-100", "🌌", "Cosmic Reality Simulator", "Is this a quantum supercomputer? The pinnacle of silicon evolution."),
-        ("89-95",  "🛸", "NASA Supercomputer",        "Hyprland bowed in respect before the kernel even finished booting."),
-        ("76-88",  "🚀", "Cyberpunk Beast",           "High-refresh DSC + heavy silicon. Wayland animations glide like liquid butter."),
-        ("61-75",  "🏎️", "Gaming Chair Missing",     "High refresh rate, solid GPU. Now you can only blame your own reflexes."),
-        ("46-60",  "🚗", "Honest Daily Driver",       "Reliable workhorse. Won't break records, won't break a sweat. Perfectly balanced."),
-        ("31-45",  "🚲", "Budget Warrior",            "Proud veteran silicon. Smooth in 720p, doubles as a space heater on 1080p60."),
-        ("16-30",  "📻", "Study Mode Only",           "Fans are quiet as long as you only open LibreOffice and htop. Don't push your luck."),
-        ("0-15",   "🥔", "Potato Toaster",            "You installed Arch on a microwave. The cooling fans are screaming for mercy."),
+        ("S+", "96-100", "#1 - #124",     "", "Cosmic Reality Simulator", "Top 1%"),
+        ("S",  "89-95",  "#125 - #624",   "󰓅", "NASA Supercomputer",        "Top 5%"),
+        ("A",  "76-88",  "#625 - #1872",  "", "Cyberpunk Beast",           "Top 15%"),
+        ("B",  "61-75",  "#1873 - #4368", "", "Gaming Chair Missing",     "Upper 35%"),
+        ("C",  "46-60",  "#4369 - #8112", "", "Honest Daily Driver",       "Mid 50%"),
+        ("D",  "31-45",  "#8113 - #10608","", "Budget Warrior",            "Lower 25%"),
+        ("E",  "16-30",  "#10609-#12105", "", "Study Mode Only",           "Ultra-Eco"),
+        ("F",  "0-15",   "#12106-#12480", "", "Potato Toaster",            "Potato"),
     ];
 
-    for (range, icon, name, desc) in tiers {
-        println!("  \x1b[1;33m{:>7}\x1b[0m  {} \x1b[1;37m{:<28}\x1b[0m \x1b[90m{}\x1b[0m", range, icon, name, desc);
+    for (t_badge, range, rank_span, icon, name, share) in tiers {
+        let is_my_tier = (res.total_score >= 76 && t_badge == "A")
+            || (res.total_score >= 89 && res.total_score <= 95 && t_badge == "S")
+            || (res.total_score >= 96 && t_badge == "S+")
+            || (res.total_score >= 61 && res.total_score <= 75 && t_badge == "B")
+            || (res.total_score >= 46 && res.total_score <= 60 && t_badge == "C")
+            || (res.total_score >= 31 && res.total_score <= 45 && t_badge == "D")
+            || (res.total_score >= 16 && res.total_score <= 30 && t_badge == "E")
+            || (res.total_score < 16 && t_badge == "F");
+
+        if is_my_tier {
+            println!("  \x1b[1;32m┌────────────────────────────────────────────────────────────────────────────────────────┐\x1b[0m");
+            println!("  \x1b[1;32m│\x1b[0m \x1b[1;33m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[1;37m{:<27}\x1b[0m \x1b[1;32m{:<9}\x1b[0m \x1b[1;32m│\x1b[0m", t_badge, range, rank_span, icon, name, share);
+            println!("  \x1b[1;32m│\x1b[0m   \x1b[1;32m👉 WORLD RANK #{} [YOUR PC]\x1b[0m • Score: \x1b[1;37m{}/100\x1b[0m ({})                    \x1b[1;32m│\x1b[0m", res.global_rank, res.total_score, res.tier_name);
+            println!("  \x1b[1;32m└────────────────────────────────────────────────────────────────────────────────────────┘\x1b[0m");
+        } else {
+            println!("    \x1b[1;30m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[0;37m{:<27}\x1b[0m \x1b[90m{:<9}\x1b[0m", t_badge, range, rank_span, icon, name, share);
+        }
     }
     println!();
 }

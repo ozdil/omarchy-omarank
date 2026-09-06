@@ -9,32 +9,51 @@ Panel {
   id: root
   moduleName: "ozdil.omarank"
   ipcTarget: "ozdil.omarank"
+  manageIpc: false
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   property int totalScore: 0
+  property int globalRank: 0
+  property int totalMachines: 12480
   property string tierName: "Benchmarking..."
-  property string tierIcon: "🏆"
+  property string tierIcon: ""
+  property string rankNerdIcon: ""
   property string tierColor: "#38bdf8"
   readonly property color tierColorObj: Qt.color(root.tierColor)
-  property string tierQuote: ""
-  property string percentileText: ""
+  property string tierQuote: "Analyzing silicon architecture..."
+  property string percentileText: "CALCULATING PERCENTILE..."
 
   property int cpuScore: 0
   property int gpuScore: 0
   property int ramScore: 0
+  property int moboScore: 0
   property int displayScore: 0
   property int storageScore: 0
 
-  property string cpuDesc: ""
-  property string gpuDesc: ""
-  property string ramDesc: ""
-  property string displayDesc: ""
-  property string storageDesc: ""
+  property string cpuDesc: "--"
+  property string gpuDesc: "--"
+  property string ramDesc: "--"
+  property string moboDesc: "--"
+  property string displayDesc: "--"
+  property string storageDesc: "--"
+  property string worldRankDesc: "--"
+  property string osDesc: "Omarchy Linux"
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
+
+  function rankNerdIconFor(score) {
+    if (score >= 96) return "" // Trophy
+    if (score >= 89) return "󰓅" // Speedometer
+    if (score >= 76) return "" // Rocket
+    if (score >= 61) return "" // Gamepad
+    if (score >= 46) return "" // Monitor
+    if (score >= 31) return "" // Chip
+    if (score >= 16) return "" // Laptop
+    return "" // Alert
+  }
 
   function cleanSanitized(str, maxLen) {
     if (!str) return ""
@@ -44,6 +63,44 @@ Panel {
 
   function resolveEnginePath() {
     return Qt.resolvedUrl("omarank-engine").toString().replace(/^file:\/\//, "")
+  }
+
+  function refresh() {
+    if (!statusProc.running) {
+      statusProc.running = true
+    }
+  }
+
+  function copyToClipboard(val) {
+    if (!val) return
+    copyProc.command = ["wl-copy", String(val)]
+    copyProc.running = true
+  }
+
+  function launchDashboard() {
+    root.close()
+    var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
+    launchProc.command = ["omarchy-launch-floating-terminal-with-presentation", dashPath]
+    launchDeadlineTimer.restart()
+    launchProc.running = true
+  }
+
+  function triggerSurvey() {
+    if (root.isSubmittingSurvey) return
+    root.isSubmittingSurvey = true
+    root.surveyStatusMsg = "Sending anonymous survey..."
+    surveyProc.running = true
+  }
+
+  IpcHandler {
+    target: "ozdil.omarank"
+
+    function open() { root.open() }
+    function close() { root.close() }
+    function show() { root.open() }
+    function hide() { root.close() }
+    function toggle() { root.toggle() }
+    function refresh() { root.refresh() }
   }
 
   Process {
@@ -56,32 +113,66 @@ Panel {
           var cleanText = String(text || "").slice(0, 65536)
           var d = JSON.parse(cleanText)
           root.totalScore = Number(d.total_score) || 0
+          root.globalRank = Number(d.global_rank) || 0
+          root.totalMachines = Number(d.total_machines) || 12480
           root.tierName = root.cleanSanitized(d.tier_name || "Unknown", 40)
-          root.tierIcon = root.cleanSanitized(d.tier_icon || "🏆", 8)
+          root.tierIcon = root.cleanSanitized(d.tier_icon || "󰢮", 8)
+          root.rankNerdIcon = root.cleanSanitized(d.tier_nerd_icon || root.rankNerdIconFor(root.totalScore), 8)
           root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
-          root.tierQuote = root.cleanSanitized(d.tier_quote || "", 120)
+          root.tierQuote = root.cleanSanitized(d.tier_quote || "", 140)
           root.percentileText = root.cleanSanitized(d.percentile_text || "", 100)
+
+          if (root.globalRank > 0) {
+            root.worldRankDesc = "#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString()
+          }
 
           if (d.sub_scores) {
             root.cpuScore = Number(d.sub_scores.cpu) || 0
             root.gpuScore = Number(d.sub_scores.gpu) || 0
             root.ramScore = Number(d.sub_scores.ram) || 0
+            root.moboScore = Number(d.sub_scores.mobo) || 0
             root.displayScore = Number(d.sub_scores.display) || 0
             root.storageScore = Number(d.sub_scores.storage) || 0
           }
 
           if (d.hardware) {
-            root.cpuDesc = root.cleanSanitized(d.hardware.cpu_name + " (" + d.hardware.cpu_threads + " threads)", 60)
-            root.gpuDesc = root.cleanSanitized(d.hardware.gpu_name, 50)
-            root.ramDesc = root.cleanSanitized(d.hardware.ram_total_gb + " GB System RAM", 30)
+            var rawCpu = String(d.hardware.cpu_name || "")
+            var cleanCpu = rawCpu.replace(/Intel\(R\)\s+Core\(TM\)\s+/g, "").replace(/AMD\s+Ryzen\s+/g, "Ryzen ").trim()
+            var threads = d.hardware.cpu_threads ? (" (" + d.hardware.cpu_threads + "T)") : ""
+            root.cpuDesc = root.cleanSanitized(cleanCpu + threads, 30)
+
+            var rawGpu = String(d.hardware.gpu_name || "")
+            var gpuMatch = rawGpu.match(/\[(.*?)\]/)
+            var cleanGpu = gpuMatch ? gpuMatch[1] : rawGpu.replace(/Intel Corporation /g, "").replace(/Advanced Micro Devices, Inc\. /g, "").replace(/NVIDIA Corporation /g, "").trim()
+            root.gpuDesc = root.cleanSanitized(cleanGpu, 30)
+
+            var ramType = d.hardware.ram_type || "RAM"
+            var ramSpeed = d.hardware.ram_speed_mts ? ("-" + d.hardware.ram_speed_mts) : ""
+            var ramGb = Math.round(Number(d.hardware.ram_total_gb) || 0)
+            root.ramDesc = root.cleanSanitized(ramGb + "GB " + ramType + ramSpeed, 24)
+
+            var moboName = String(d.hardware.mobo_name || "").replace(/DDR4/g, "").replace(/DDR5/g, "").trim()
+            var chipset = String(d.hardware.chipset || "").replace(/Intel /g, "").replace(/AMD /g, "").trim()
+            if (chipset && moboName && !moboName.includes(chipset)) {
+              root.moboDesc = root.cleanSanitized(moboName + " (" + chipset + ")", 28)
+            } else if (moboName) {
+              root.moboDesc = root.cleanSanitized(moboName, 28)
+            } else {
+              root.moboDesc = root.cleanSanitized(chipset || "Motherboard", 28)
+            }
+
+            var rawStorage = String(d.hardware.storage_model || d.hardware.storage_type || "NVMe")
+            var cleanStorage = rawStorage.replace(/Samsung SSD\s+/gi, "").replace(/Crucial\s+/gi, "").replace(/Western Digital\s+/gi, "WD ").trim()
+            root.storageDesc = root.cleanSanitized(cleanStorage, 26)
+
             if (d.hardware.monitors && d.hardware.monitors.length > 0) {
               var m = d.hardware.monitors[0]
-              root.displayDesc = root.cleanSanitized(m.width + "x" + m.height + " @" + m.refresh_rate + "Hz", 30)
+              root.displayDesc = root.cleanSanitized(m.width + "x" + m.height + " @" + Math.round(m.refresh_rate) + "Hz", 30)
             }
-            root.storageDesc = root.cleanSanitized(d.hardware.storage_type, 30)
+            root.osDesc = root.cleanSanitized(d.hardware.os_name ? (d.hardware.os_name + " Linux") : "Omarchy Linux", 24)
           }
         } catch(e) {
-          // Keep prior state
+          // Preserve previous state on parse errors
         }
       }
     }
@@ -106,6 +197,10 @@ Panel {
   }
 
   Process {
+    id: copyProc
+  }
+
+  Process {
     id: launchProc
     onExited: function(exitCode) {
       launchDeadlineTimer.stop()
@@ -124,6 +219,7 @@ Panel {
   Component.onDestruction: {
     if (statusProc.running) statusProc.kill()
     if (surveyProc.running) surveyProc.kill()
+    if (copyProc.running) copyProc.kill()
     if (launchProc.running) launchProc.kill()
   }
 
@@ -131,39 +227,28 @@ Panel {
     if (!statusProc.running) statusProc.running = true
   }
 
-  function launchDashboard() {
-    root.close()
-    var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
-    launchProc.command = ["omarchy-launch-floating-terminal-with-presentation", dashPath]
-    launchDeadlineTimer.restart()
-    launchProc.running = true
-  }
-
-  function triggerSurvey() {
-    if (root.isSubmittingSurvey) return
-    root.isSubmittingSurvey = true
-    root.surveyStatusMsg = "Sending anonymous survey..."
-    surveyProc.running = true
-  }
-
   Timer {
     interval: 30000
     running: true
     repeat: true
-    triggeredOnStart: true
+    triggeredOnStart: false
     onTriggered: {
       if (!statusProc.running) statusProc.running = true
     }
   }
 
-  WidgetButton {
+  // Top Bar Icon: Only the rank Nerd Font glyph, theme-colored, no text!
+  BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.tierIcon + " " + (root.totalScore > 0 ? String(root.totalScore) : "--")
-    foreground: root.tierColor
-    tooltipText: "OmaRank: " + root.totalScore + " / 100 (" + root.tierName + ")"
-    onPressed: function(b) { root.toggle() }
+    text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
+    tooltipText: "OmaRank: " + root.tierName + " (" + (root.totalScore > 0 ? root.totalScore : "--") + " / 100)"
+
+    onPressed: function(b) {
+      if (root.opened) root.close()
+      else root.open()
+    }
   }
 
   KeyboardPanel {
@@ -172,7 +257,7 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    contentWidth: panel.fittedContentWidth(Style.space(430))
+    contentWidth: panel.fittedContentWidth(Style.space(480))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     Column {
@@ -182,348 +267,297 @@ Panel {
       anchors.top: parent.top
       spacing: Style.space(12)
 
-      // ---------- Hero Header ----------
+      // ---------- Hero Header (Matching Omarchy Network Panel) ----------
       Item {
         width: parent.width
-        implicitHeight: Math.max(heroLabels.implicitHeight, heroScoreRow.implicitHeight)
+        implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, heroActions.implicitHeight)
+
+        Text {
+          id: heroIcon
+          textFormat: Text.PlainText
+          text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
+          color: root.bar ? root.bar.foreground : Color.foreground
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.display
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        RowLayout {
+          id: heroActions
+          spacing: Style.space(6)
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+
+          Button {
+            id: refreshAction
+            iconText: "󰑐"
+            tooltipText: "Re-check specs"
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+            iconSize: Style.font.subtitle * 1.3
+            horizontalPadding: Style.space(5)
+            verticalPadding: Style.space(2)
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: root.refresh()
+          }
+
+          Button {
+            id: dashAction
+            iconText: "󰍹"
+            tooltipText: "Open Terminal Dashboard"
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+            iconSize: Style.font.subtitle * 1.3
+            horizontalPadding: Style.space(5)
+            verticalPadding: Style.space(2)
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: root.launchDashboard()
+          }
+        }
 
         Column {
           id: heroLabels
-          anchors.left: parent.left
-          anchors.right: heroScoreRow.left
-          anchors.rightMargin: Style.space(8)
+          anchors.left: heroIcon.right
+          anchors.leftMargin: Style.space(14)
+          anchors.right: heroActions.left
+          anchors.rightMargin: Style.space(10)
           anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(4)
-
-          RowLayout {
-            spacing: Style.space(8)
-            Text {
-              textFormat: Text.PlainText
-              text: "🏆 OmaRank"
-              color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.title
-              font.bold: true
-            }
-
-            Rectangle {
-              height: Style.space(18)
-              width: tierBadgeText.implicitWidth + Style.space(12)
-              radius: Style.space(9)
-              color: Qt.rgba(root.tierColorObj.r, root.tierColorObj.g, root.tierColorObj.b, 0.16)
-              border.color: root.tierColor
-              border.width: 1
-
-              Text {
-                id: tierBadgeText
-                textFormat: Text.PlainText
-                anchors.centerIn: parent
-                text: root.tierIcon + " " + root.tierName
-                font.pixelSize: 10
-                font.bold: true
-                color: root.tierColor
-              }
-            }
-          }
+          spacing: Style.space(2)
 
           Text {
+            id: heroTitle
             textFormat: Text.PlainText
-            text: root.percentileText.toUpperCase()
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: 9
-            font.bold: true
-            font.letterSpacing: 1.1
-            elide: Text.ElideRight
             width: parent.width
-          }
-        }
-
-        Row {
-          id: heroScoreRow
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(1)
-
-          Text {
-            textFormat: Text.PlainText
-            text: root.totalScore > 0 ? String(root.totalScore) : "—"
-            color: root.tierColor
+            text: root.tierName
+            color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.displayLarge
+            font.pixelSize: Style.font.title
             font.bold: true
-            anchors.baseline: scoreMax.baseline
+            elide: Text.ElideRight
           }
 
           Text {
-            id: scoreMax
+            id: heroMeta
             textFormat: Text.PlainText
-            text: "/100"
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.8)
+            width: parent.width
+            text: (root.globalRank > 0 ? ("WORLD RANK #" + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.caption
             font.bold: true
+            font.letterSpacing: 1.2
+            elide: Text.ElideRight
           }
         }
       }
 
-      // ---------- Critic Quote Callout ----------
-      BorderSurface {
+      // ---------- Hardware Specs Telemetry Grid (Exact 4-Column Omarchy Style) ----------
+      Column {
         width: parent.width
-        implicitHeight: quoteText.implicitHeight + Style.space(14)
-        radius: Style.cornerRadius
-        color: Qt.rgba(0, 0, 0, 0.25)
-        border.color: Qt.rgba(1, 1, 1, 0.08)
-        border.width: 1
+        spacing: Style.spacing.labelGap
 
-        Text {
-          id: quoteText
-          textFormat: Text.PlainText
-          anchors.fill: parent
-          anchors.margins: Style.space(8)
-          text: "“" + root.tierQuote + "”"
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
-          font.pixelSize: Style.font.caption
-          font.italic: true
-          color: root.bar ? root.bar.foreground : Color.foreground
-          wrapMode: Text.WordWrap
-          verticalAlignment: Text.AlignVCenter
+        GridLayout {
+          width: parent.width
+          columns: 4
+          columnSpacing: Style.space(16)
+          rowSpacing: Style.spacing.labelGap
+
+          InfoLabel { text: "Processor" }
+          DetailValue {
+            text: root.cpuDesc
+            copyable: true
+            tooltipText: "Copy CPU info"
+          }
+          InfoLabel { text: "Graphics" }
+          DetailValue {
+            text: root.gpuDesc
+            copyable: true
+            tooltipText: "Copy GPU info"
+          }
+
+          InfoLabel { text: "Memory" }
+          DetailValue {
+            text: root.ramDesc
+            copyable: true
+            tooltipText: "Copy RAM info"
+          }
+          InfoLabel { text: "Motherboard" }
+          DetailValue {
+            text: root.moboDesc
+            copyable: true
+            tooltipText: "Copy Motherboard info"
+          }
+
+          InfoLabel { text: "Storage" }
+          DetailValue {
+            text: root.storageDesc
+            copyable: true
+            tooltipText: "Copy Storage info"
+          }
+          InfoLabel { text: "Display" }
+          DetailValue {
+            text: root.displayDesc
+            copyable: true
+            tooltipText: "Copy Display info"
+          }
+
+          InfoLabel { text: "World Rank" }
+          DetailValue {
+            text: root.worldRankDesc
+            copyable: true
+            tooltipText: root.percentileText
+          }
+          InfoLabel { text: "Total Score" }
+          DetailValue {
+            text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " / 100"
+          }
         }
       }
 
+      // ---------- Sub-Scores Section Separator ----------
       PanelSeparator {
-        width: parent.width
         foreground: root.bar ? root.bar.foreground : Color.foreground
       }
 
-      // ---------- Hardware Breakdown Bars (All 5 Components) ----------
+      // ---------- Sub-Scores Breakdown (Exact DNS Provider Segmented Pill Row) ----------
       Column {
         width: parent.width
-        spacing: Style.space(8)
+        spacing: Style.space(10)
 
-        // CPU
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          RowLayout {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Processor (CPU)"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: root.bar ? root.bar.foreground : Color.foreground
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.cpuDesc
-              font.pixelSize: 9
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.5)
-              Layout.fillWidth: true
-              horizontalAlignment: Text.AlignRight
-              elide: Text.ElideRight
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.cpuScore + "/100"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: "#38bdf8"
-            }
-          }
-          Rectangle {
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Qt.rgba(1, 1, 1, 0.08)
-            Rectangle {
-              width: Math.min(parent.width, Math.max(0, (root.cpuScore / 100) * parent.width))
-              height: parent.height
-              radius: 2
-              color: "#38bdf8"
-            }
-          }
+        PanelSectionHeader {
+          text: "SUB-SCORES BREAKDOWN"
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
         }
 
-        // GPU
-        Column {
+        Row {
+          id: subScoresRow
           width: parent.width
-          spacing: Style.space(3)
-          RowLayout {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Graphics (GPU)"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: root.bar ? root.bar.foreground : Color.foreground
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.gpuDesc
-              font.pixelSize: 9
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.5)
-              Layout.fillWidth: true
-              horizontalAlignment: Text.AlignRight
-              elide: Text.ElideRight
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.gpuScore + "/100"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: "#818cf8"
-            }
+          spacing: Style.space(6)
+
+          readonly property int count: 6
+          readonly property real cellWidth: (width - spacing * (count - 1)) / count
+
+          SubScorePill {
+            label: "CPU " + root.cpuScore
+            tooltip: "Processor Score: " + root.cpuScore + "/100 (" + root.cpuDesc + ")"
+            width: subScoresRow.cellWidth
           }
-          Rectangle {
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Qt.rgba(1, 1, 1, 0.08)
-            Rectangle {
-              width: Math.min(parent.width, Math.max(0, (root.gpuScore / 100) * parent.width))
-              height: parent.height
-              radius: 2
-              color: "#818cf8"
-            }
+
+          SubScorePill {
+            label: "GPU " + root.gpuScore
+            tooltip: "Graphics Score: " + root.gpuScore + "/100 (" + root.gpuDesc + ")"
+            width: subScoresRow.cellWidth
+          }
+
+          SubScorePill {
+            label: "RAM " + root.ramScore
+            tooltip: "Memory Score: " + root.ramScore + "/100 (" + root.ramDesc + ")"
+            width: subScoresRow.cellWidth
+          }
+
+          SubScorePill {
+            label: "MOBO " + root.moboScore
+            tooltip: "Motherboard Score: " + root.moboScore + "/100 (" + root.moboDesc + ")"
+            width: subScoresRow.cellWidth
+          }
+
+          SubScorePill {
+            label: "DISP " + root.displayScore
+            tooltip: "Display Score: " + root.displayScore + "/100 (" + root.displayDesc + ")"
+            width: subScoresRow.cellWidth
+          }
+
+          SubScorePill {
+            label: "DISK " + root.storageScore
+            tooltip: "Storage Score: " + root.storageScore + "/100 (" + root.storageDesc + ")"
+            width: subScoresRow.cellWidth
           }
         }
+      }
 
-        // Memory (RAM)
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          RowLayout {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Memory (RAM)"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: root.bar ? root.bar.foreground : Color.foreground
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.ramDesc
-              font.pixelSize: 9
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.5)
-              Layout.fillWidth: true
-              horizontalAlignment: Text.AlignRight
-              elide: Text.ElideRight
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.ramScore + "/100"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: "#22c55e"
-            }
-          }
-          Rectangle {
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Qt.rgba(1, 1, 1, 0.08)
-            Rectangle {
-              width: Math.min(parent.width, Math.max(0, (root.ramScore / 100) * parent.width))
-              height: parent.height
-              radius: 2
-              color: "#22c55e"
-            }
-          }
+      // ---------- Verdict Section Separator ----------
+      PanelSeparator {
+        foreground: root.bar ? root.bar.foreground : Color.foreground
+      }
+
+      // ---------- System Verdict Card (Exact Known Networks Box Style) ----------
+      Column {
+        width: parent.width
+        spacing: Style.space(10)
+
+        PanelSectionHeader {
+          text: "SYSTEM VERDICT"
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
         }
 
-        // Display
-        Column {
+        BorderSurface {
+          id: verdictCard
           width: parent.width
-          spacing: Style.space(3)
-          RowLayout {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Display & Hz"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: root.bar ? root.bar.foreground : Color.foreground
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.displayDesc
-              font.pixelSize: 9
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.5)
-              Layout.fillWidth: true
-              horizontalAlignment: Text.AlignRight
-              elide: Text.ElideRight
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.displayScore + "/100"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: "#f59e0b"
-            }
-          }
-          Rectangle {
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Qt.rgba(1, 1, 1, 0.08)
-            Rectangle {
-              width: Math.min(parent.width, Math.max(0, (root.displayScore / 100) * parent.width))
-              height: parent.height
-              radius: 2
-              color: "#f59e0b"
-            }
-          }
-        }
+          implicitHeight: verdictRow.implicitHeight + Style.space(16)
+          radius: Style.cornerRadius
+          color: Qt.rgba(0, 0, 0, 0.25)
+          border.color: Qt.rgba(root.bar ? root.bar.foreground.r : 1, root.bar ? root.bar.foreground.g : 1, root.bar ? root.bar.foreground.b : 1, 0.22)
+          border.width: 1
 
-        // Storage (Disk)
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
           RowLayout {
-            width: parent.width
+            id: verdictRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
+            spacing: Style.space(12)
+
             Text {
               textFormat: Text.PlainText
-              text: "Storage (Disk)"
-              font.pixelSize: Style.font.caption
-              font.bold: true
+              text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
               color: root.bar ? root.bar.foreground : Color.foreground
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.title
+              Layout.alignment: Qt.AlignVCenter
             }
-            Text {
-              textFormat: Text.PlainText
-              text: root.storageDesc
-              font.pixelSize: 9
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.5)
+
+            Column {
               Layout.fillWidth: true
-              horizontalAlignment: Text.AlignRight
-              elide: Text.ElideRight
+              spacing: Style.space(2)
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.tierName
+                color: root.bar ? root.bar.foreground : Color.foreground
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "“" + root.tierQuote + "”"
+                color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+                width: parent.width
+              }
             }
+
             Text {
               textFormat: Text.PlainText
-              text: root.storageScore + "/100"
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              color: "#a855f7"
-            }
-          }
-          Rectangle {
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Qt.rgba(1, 1, 1, 0.08)
-            Rectangle {
-              width: Math.min(parent.width, Math.max(0, (root.storageScore / 100) * parent.width))
-              height: parent.height
-              radius: 2
-              color: "#a855f7"
+              text: "󰌾"
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.subtitle
+              Layout.alignment: Qt.AlignVCenter
             }
           }
         }
       }
 
+      // ---------- Action Buttons Separator ----------
       PanelSeparator {
-        width: parent.width
         foreground: root.bar ? root.bar.foreground : Color.foreground
       }
 
@@ -535,7 +569,6 @@ Panel {
         Button {
           width: parent.width
           bordered: true
-          iconText: "🌐"
           text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
           fontSize: Style.font.bodySmall
           foreground: root.bar ? root.bar.foreground : Color.foreground
@@ -551,14 +584,13 @@ Panel {
           textFormat: Text.PlainText
           text: root.surveyStatusMsg
           font.pixelSize: Style.font.caption
-          color: "#4ade80"
+          color: root.bar ? root.bar.foreground : Color.foreground
           anchors.horizontalCenter: parent.horizontalCenter
         }
 
         Button {
           width: parent.width
           bordered: true
-          iconText: "⚡"
           text: "Open Terminal Benchmark & Ladder"
           fontSize: Style.font.bodySmall
           foreground: root.bar ? root.bar.foreground : Color.foreground
@@ -568,6 +600,64 @@ Panel {
           onClicked: root.launchDashboard()
         }
       }
+    }
+  }
+
+  // Segmented sub-score pill (matching DnsProviderPill)
+  component SubScorePill: Button {
+    id: pill
+    required property string label
+    required property string tooltip
+
+    text: label
+    tooltipText: tooltip
+    fontSize: Style.font.bodySmall
+    foreground: root.bar ? root.bar.foreground : Color.foreground
+    fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+    horizontalPadding: Style.space(4)
+    verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+    bordered: true
+  }
+
+  // Label text matching Omarchy InfoLabel
+  component InfoLabel: Text {
+    textFormat: Text.PlainText
+    color: root.bar ? root.bar.foreground : Color.foreground
+    opacity: 0.6
+    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  // Value text matching Omarchy InfoValue
+  component InfoValue: Text {
+    textFormat: Text.PlainText
+    color: root.bar ? root.bar.foreground : Color.foreground
+    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  // Detail value matching Omarchy DetailValue with copy-to-clipboard
+  component DetailValue: InfoValue {
+    property bool copyable: false
+    property string tooltipText: "Copy to clipboard"
+
+    Layout.fillWidth: true
+    horizontalAlignment: Text.AlignRight
+    elide: Text.ElideRight
+
+    MouseArea {
+      id: valueMouse
+      anchors.fill: parent
+      enabled: copyable && parent.text !== "" && parent.text !== "--"
+      hoverEnabled: enabled
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: root.copyToClipboard(parent.text)
+    }
+
+    PanelToolTip {
+      visible: valueMouse.enabled && valueMouse.containsMouse
+      text: tooltipText
+      fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
     }
   }
 }

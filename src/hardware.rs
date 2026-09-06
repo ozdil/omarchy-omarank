@@ -19,19 +19,30 @@ pub struct HardwareInfo {
     pub cpu_mhz: f64,
     pub ram_total_mb: u64,
     pub ram_total_gb: f64,
+    pub ram_type: String,
+    pub ram_speed_mts: u32,
+    pub ram_modules: usize,
+    pub ram_slots: usize,
+    pub mobo_vendor: String,
+    pub mobo_name: String,
+    pub mobo_bios: String,
+    pub chipset: String,
     pub gpu_name: String,
     pub gpu_driver: String,
     pub monitors: Vec<MonitorInfo>,
     pub storage_type: String,
+    pub storage_model: String,
     pub os_name: String,
 }
 
 pub fn detect_hardware() -> HardwareInfo {
     let (cpu_name, cpu_cores, cpu_threads, cpu_mhz) = detect_cpu();
     let (ram_total_mb, ram_total_gb) = detect_ram();
+    let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details();
+    let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard();
     let (gpu_name, gpu_driver) = detect_gpu();
     let monitors = detect_monitors();
-    let storage_type = detect_storage();
+    let (storage_type, storage_model) = detect_storage();
     let os_name = detect_os();
 
     HardwareInfo {
@@ -41,10 +52,19 @@ pub fn detect_hardware() -> HardwareInfo {
         cpu_mhz,
         ram_total_mb,
         ram_total_gb,
+        ram_type,
+        ram_speed_mts,
+        ram_modules,
+        ram_slots,
+        mobo_vendor,
+        mobo_name,
+        mobo_bios,
+        chipset,
         gpu_name,
         gpu_driver,
         monitors,
         storage_type,
+        storage_model,
         os_name,
     }
 }
@@ -196,16 +216,160 @@ fn detect_monitors() -> Vec<MonitorInfo> {
     list
 }
 
-fn detect_storage() -> String {
-    if let Ok(entries) = fs::read_dir("/sys/block") {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("nvme") {
-                return "NVMe PCIe Gen4/5 SSD".to_string();
+fn detect_motherboard() -> (String, String, String, String) {
+    let mut vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor")
+        .or_else(|_| fs::read_to_string("/sys/class/dmi/id/sys_vendor"))
+        .unwrap_or_else(|_| "Generic".into());
+    vendor = vendor.replace(" Technology Co., Ltd.", "").replace(" Inc.", "").trim().to_string();
+
+    let mut name = fs::read_to_string("/sys/class/dmi/id/board_name")
+        .or_else(|_| fs::read_to_string("/sys/class/dmi/id/product_name"))
+        .unwrap_or_else(|_| "Motherboard".into());
+    name = name.trim().to_string();
+
+    let bios = fs::read_to_string("/sys/class/dmi/id/bios_version")
+        .unwrap_or_else(|_| "Unknown".into());
+
+    let mut chipset = String::from("Mainstream Chipset");
+    if let Ok(output) = Command::new("/usr/bin/lspci").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("ISA bridge:") || line.contains("Host bridge:") || line.contains("SMBus:") {
+                if let Some(idx) = line.find("Intel Corporation ") {
+                    let rest = &line[idx + 18..];
+                    if let Some(c_idx) = rest.find(" Chipset") {
+                        chipset = format!("Intel {}", &rest[..c_idx]);
+                        break;
+                    }
+                } else if line.contains("AMD") {
+                    for pat in ["X870E", "X870", "X670E", "X670", "B850", "B650E", "B650", "A620", "X570", "B550", "B450"] {
+                        if line.contains(pat) {
+                            chipset = format!("AMD {}", pat);
+                            break;
+                        }
+                    }
+                    if chipset.starts_with("AMD") {
+                        break;
+                    }
+                }
             }
         }
     }
-    "SATA SSD / HDD".to_string()
+
+    if chipset == "Mainstream Chipset" {
+        for pat in ["Z890", "Z790", "B760", "H770", "H610", "X870E", "X870", "X670E", "X670", "B850", "B650", "A620", "Z690", "B660"] {
+            if name.contains(pat) {
+                if pat.starts_with('Z') || pat.starts_with('B') || pat.starts_with('H') {
+                    chipset = format!("Intel {}", pat);
+                } else {
+                    chipset = format!("AMD {}", pat);
+                }
+                break;
+            }
+        }
+    }
+
+    (
+        clean_string(&vendor, 25),
+        clean_string(&name, 35),
+        clean_string(bios.trim(), 15),
+        clean_string(&chipset, 25),
+    )
+}
+
+fn detect_ram_details() -> (String, u32, usize, usize) {
+    let mut ram_type = String::from("DDR4");
+    let mut speed_mts: u32 = 3200;
+    let mut modules: usize = 0;
+    let mut slots: usize = 4;
+
+    if let Ok(output) = Command::new("/usr/bin/inxi")
+        .args(["-m", "--output", "json", "--output-file", "print"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                if let Some(arr) = val.as_array() {
+                    for section in arr {
+                        if let Some(obj) = section.as_object() {
+                            for (k, v) in obj {
+                                if k.contains("Memory") {
+                                    if let Some(mem_items) = v.as_array() {
+                                        for item in mem_items {
+                                            if let Some(iobj) = item.as_object() {
+                                                for (ik, iv) in iobj {
+                                                    if ik.contains("type") {
+                                                        if let Some(s) = iv.as_str() {
+                                                            if s.starts_with("DDR") || s.starts_with("LPDDR") {
+                                                                ram_type = s.to_string();
+                                                            }
+                                                        }
+                                                    }
+                                                    if ik.contains("speed") {
+                                                        if let Some(s) = iv.as_str() {
+                                                            if let Some(mts) = s.split_whitespace().next() {
+                                                                if let Ok(spd) = mts.parse::<u32>() {
+                                                                    speed_mts = spd;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if ik.contains("Device") {
+                                                        modules += 1;
+                                                    }
+                                                    if ik.contains("slots") {
+                                                        if let Some(s) = iv.as_u64() {
+                                                            slots = s as usize;
+                                                        } else if let Some(s) = iv.as_str() {
+                                                            if let Ok(sl) = s.parse::<usize>() {
+                                                                slots = sl;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if modules == 0 {
+        modules = 2;
+    }
+    (ram_type, speed_mts, modules, slots)
+}
+
+fn detect_storage() -> (String, String) {
+    let mut storage_type = String::from("SATA SSD / HDD");
+    let mut storage_model = String::from("Solid State Drive");
+
+    if let Ok(entries) = fs::read_dir("/sys/block") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("nvme") && name.ends_with("n1") {
+                storage_type = "NVMe PCIe Gen4/5 SSD".to_string();
+                let model_path = format!("/sys/block/{}/device/model", name);
+                if let Ok(m) = fs::read_to_string(&model_path) {
+                    storage_model = clean_string(m.trim(), 40);
+                    break;
+                }
+            } else if (name.starts_with("sd") || name.starts_with("vd")) && storage_model == "Solid State Drive" {
+                let model_path = format!("/sys/block/{}/device/model", name);
+                if let Ok(m) = fs::read_to_string(&model_path) {
+                    storage_model = clean_string(m.trim(), 40);
+                    storage_type = "SATA SSD".to_string();
+                }
+            }
+        }
+    }
+
+    (storage_type, storage_model)
 }
 
 fn detect_os() -> String {

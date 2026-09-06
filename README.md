@@ -15,19 +15,23 @@
 
 ## 🌟 Highlights
 
-- ⚡ **Native Rust Engine (`omarank-engine`)**: Fast, zero-overhead hardware detection directly from Linux sysfs (`/proc/cpuinfo`, `/proc/meminfo`, `/sys/class/drm/`, `hyprctl`, `lspci`).
-- 🎯 **0–100 Weighted OmaScore**:
-  - **CPU (28%)**: Physical cores, hyperthreads, clockspeed.
-  - **GPU (35%)**: Dedicated GPU tier, driver classification (`xe`, `amdgpu`, `nvidia`).
-  - **RAM (15%)**: Capacity tiers (8 GB to 64+ GB).
-  - **Display (17%)**: High-refresh gaming/ultrawide panel detection (e.g. 5120x1440 @ 240Hz DSC).
-  - **Storage (5%)**: Fast NVMe PCIe Gen4/5 detection vs legacy storage.
-- 🎭 **Humorous Tier Ladder**: Global English rank titles inspired by Omarchy's volume and brightness ladders.
-- 🎨 **Quickshell Bar Widget (`Panel.qml`)**:
-  - Dynamic score badge with tier-themed accent colors.
-  - Real-time progress bars for CPU, GPU, RAM, and Display.
-  - One-click launcher for the rich ANSI terminal dashboard.
-- 🌐 **OmaStat Community Survey**:
+- ⚡ **Native Rust Engine (`omarank-engine`)**: Fast, zero-overhead hardware detection directly from Linux sysfs (`/proc/cpuinfo`, `/proc/meminfo`, `/sys/class/drm/`, `/sys/class/dmi/id/`, `lspci`, `inxi`, `hyprctl`).
+- 🎯 **0–100 Weighted OmaScore (6-Component Breakdown)**:
+  - **CPU (24%)**: Physical cores, hyperthreads, clockspeed.
+  - **GPU (32%)**: Dedicated GPU tier, driver classification (`xe`, `amdgpu`, `nvidia`).
+  - **RAM (16%)**: Generation (DDR3/DDR4/DDR5), speed in MT/s, multi-channel slots, capacity.
+  - **Motherboard (8%)**: Chipset tiers (Z890, Z790, B760, X870E, B650, etc.) and enthusiast series recognition.
+  - **Display (15%)**: High-refresh gaming/ultrawide panel detection (e.g. 5120x1440 @ 240Hz DSC).
+  - **Storage (5%)**: NVMe model recognition (e.g. Samsung 990 PRO) and PCIe Gen4/5 vs SATA/HDD.
+- 🌐 **OmaStat Global Leaderboard & Tier Matrix**:
+  - Deterministic World Rank position (e.g. `#1,021` of 12,480 battlestations globally).
+  - Complete S+ to F Tier matrix highlighting your battlestation (`omarank-engine --ladder`).
+- 🎨 **Native Quickshell Bar Widget (`Panel.qml`)**:
+  - Monochrome Nerd Font rank icon in the top bar matching native Omarchy bar widgets (``).
+  - 4-column telemetry grid for Processor, Graphics, Memory, Motherboard, Storage, Display, World Rank, and Total Score.
+  - 6-pill segmented sub-score breakdown row.
+  - Clean, icon-free action buttons and system verdict card.
+- 📡 **OmaStat Community Survey**:
   - Optional, privacy-preserving hardware survey similar to the Steam Hardware Survey.
   - 100% anonymous: strictly zero personal data, zero MAC addresses, zero IP logging, zero usernames, zero hardware serial numbers.
 

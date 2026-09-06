@@ -1,6 +1,6 @@
 # Maintainer: Ozan Özdil <ozdil>
 pkgname=omarchy-omarank
-pkgver=1.0.1
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Hardware benchmark, humorous tier ranking, and OmaStat survey widget for Omarchy"
 arch=('x86_64')
