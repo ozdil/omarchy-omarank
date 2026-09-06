@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ozdil.omarank",
   "name": "OmaRank",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
   "description": "Hardware benchmark, witty tier ranking, and OmaStat community survey widget for Omarchy.",

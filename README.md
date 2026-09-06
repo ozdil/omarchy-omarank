@@ -75,7 +75,7 @@ makepkg -si
 Or install the prebuilt `.pkg.tar.zst`:
 
 ```bash
-sudo pacman -U omarchy-omarank-1.0.0-1-x86_64.pkg.tar.zst
+sudo pacman -U omarchy-omarank-1.0.1-1-x86_64.pkg.tar.zst
 ```
 
 ### Option 2: Via Omarchy CLI
