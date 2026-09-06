@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="${DIR}/omarank-engine"
+
+if [[ ! -x "${BIN}" ]]; then
+    if command -v omarank-engine >/dev/null 2>&1; then
+        BIN="$(command -v omarank-engine)"
+    else
+        echo "Error: omarank-engine binary not found."
+        exit 1
+    fi
+fi
+
+clear
+"${BIN}"
+echo ""
+"${BIN}" --ladder
+echo ""
+echo -e "\x1b[1;36mPress [S] to submit anonymous survey to OmaStat, or [Q] to quit:\x1b[0m"
+read -r -n 1 -s key || true
+echo ""
+if [[ "${key:-}" == "s" || "${key:-}" == "S" ]]; then
+    "${BIN}" --submit-survey
+    echo ""
+    echo -e "\x1b[1;32mDone! Press Enter to exit.\x1b[0m"
+    read -r || true
+fi

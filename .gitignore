@@ -1,0 +1,8 @@
+target/
+Cargo.lock
+pkg/
+src/omarank-engine
+*.pkg.tar.zst
+omarank-engine
+*.log
+.DS_Store

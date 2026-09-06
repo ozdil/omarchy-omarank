@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="${DIR}/omarank-engine"
+
+if [[ ! -x "${BIN}" ]]; then
+    if command -v omarank-engine >/dev/null 2>&1; then
+        BIN="$(command -v omarank-engine)"
+    fi
+fi
+
+if [[ -x "${BIN}" ]]; then
+    exec "${BIN}" --status
+else
+    echo '{"text":"🏆 OmaRank","tooltip":"OmaRank engine binary not found"}'
+fi

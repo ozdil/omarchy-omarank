@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "ozdil.omarank",
+  "name": "OmaRank",
+  "version": "1.0.0",
+  "author": "Ozan Özdil (ozdil)",
+  "license": "MIT",
+  "description": "Hardware benchmark, witty tier ranking, and OmaStat community survey widget for Omarchy.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaRank",
+    "description": "Hardware benchmark, witty tier ranking, and OmaStat survey hub.",
+    "category": "System",
+    "defaultSection": "right",
+    "aliases": ["omarank", "benchmark", "hardware", "score", "omastat", "rank"],
+    "allowMultiple": false
+  }
+}
