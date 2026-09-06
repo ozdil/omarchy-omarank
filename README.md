@@ -66,26 +66,22 @@ Adheres strictly to the **Omarchy Marketplace Security Baseline**:
 
 ## 📦 Installation
 
-### Option 1: Via Pacman (Arch Linux / Omarchy Package)
-
-Build and install using `makepkg` and `pacman`:
-
-```bash
-git clone https://github.com/ozdil/omarchy-omarank.git
-cd omarchy-omarank
-makepkg -si
-```
-
-Or install the prebuilt `.pkg.tar.zst`:
-
-```bash
-sudo pacman -U omarchy-omarank-1.0.1-1-x86_64.pkg.tar.zst
-```
-
-### Option 2: Via Omarchy CLI
+Standard Omarchy plugin installation:
 
 ```bash
 omarchy plugin add https://github.com/ozdil/omarchy-omarank --enable
+```
+
+To update an existing installation:
+
+```bash
+omarchy plugin update ozdil.omarank
+```
+
+To remove:
+
+```bash
+omarchy plugin drop ozdil.omarank
 ```
 
 ---
