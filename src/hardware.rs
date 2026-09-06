@@ -61,7 +61,7 @@ fn detect_cpu() -> (String, usize, usize, f64) {
             if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
                 let key = key.trim();
                 let val = val.trim();
-                if key == "model name" && name == "Bilinmeyen Islemci" {
+                if key == "model name" && name == "Generic CPU" {
                     name = clean_string(val, 50);
                 } else if key == "processor" {
                     threads += 1;
