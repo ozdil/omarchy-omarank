@@ -128,29 +128,91 @@ fn detect_ram() -> (u64, f64) {
 }
 
 fn detect_gpu() -> (String, String) {
-    let mut gpu_name = String::from("Generic GPU");
-    let mut driver = String::from("drm");
-
-    // Try lspci first for human-readable GPU name
-    if let Ok(output) = Command::new("/usr/bin/lspci")
-        .args(["-mm", "-d", "::0300"])
+    // 1. If nvidia-smi is available, query exact discrete GPU model and driver
+    if let Ok(output) = Command::new("/usr/bin/nvidia-smi")
+        .args(["--query-gpu=gpu_name,driver_version", "--format=csv,noheader"])
         .output()
     {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let parts: Vec<&str> = line.split('"').collect();
-                if parts.len() >= 4 {
-                    let vendor = parts[3].trim();
-                    let device = if parts.len() >= 6 { parts[5].trim() } else { "" };
-                    gpu_name = format!("{} {}", vendor, device).trim().to_string();
-                    break;
+            if let Some(first_line) = stdout.lines().next() {
+                let parts: Vec<&str> = first_line.split(',').collect();
+                if !parts.is_empty() {
+                    let name = parts[0].trim();
+                    let drv = if parts.len() > 1 {
+                        format!("nvidia {}", parts[1].trim())
+                    } else {
+                        "nvidia".to_string()
+                    };
+                    if !name.is_empty() {
+                        return (clean_string(name, 55), clean_string(&drv, 30));
+                    }
                 }
             }
         }
     }
 
-    // Try uevent for kernel driver name (e.g. xe, i915, amdgpu, nvidia)
+    // 2. Scan all display controllers via lspci
+    struct GpuCandidate {
+        name: String,
+        driver: String,
+        is_discrete: bool,
+    }
+    let mut candidates: Vec<GpuCandidate> = Vec::new();
+
+    if let Ok(output) = Command::new("/usr/bin/lspci").arg("-mm").output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split('"').collect();
+                if parts.len() >= 4 {
+                    let class = parts[1].trim();
+                    if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
+                        let slot_raw = parts[0].trim();
+                        let slot = if slot_raw.contains(':') { slot_raw } else { "" };
+                        let vendor = parts[3].trim();
+                        let device = if parts.len() >= 6 { parts[5].trim() } else { "" };
+                        let full_name = format!("{} {}", vendor, device).trim().to_string();
+
+                        // Detect driver from sysfs for this PCI slot
+                        let mut dev_driver = String::from("drm");
+                        let sysfs_uevent = format!("/sys/bus/pci/devices/0000:{}/uevent", slot);
+                        let alt_uevent = format!("/sys/bus/pci/devices/{}/uevent", slot);
+                        let uevent_content = fs::read_to_string(&sysfs_uevent).or_else(|_| fs::read_to_string(&alt_uevent));
+                        if let Ok(content) = uevent_content {
+                            for uline in content.lines() {
+                                if uline.starts_with("DRIVER=") {
+                                    dev_driver = uline.trim_start_matches("DRIVER=").trim().to_string();
+                                    break;
+                                }
+                            }
+                        }
+
+                        let is_discrete = vendor.contains("NVIDIA")
+                            || (vendor.contains("Advanced Micro") && (device.contains("RX ") || device.contains("Radeon Pro")))
+                            || (vendor.contains("Intel") && (device.contains("Arc A") || device.contains("Arc B") || device.contains("Battlemage")));
+
+                        candidates.push(GpuCandidate {
+                            name: full_name,
+                            driver: dev_driver,
+                            is_discrete,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(discrete) = candidates.iter().find(|c| c.is_discrete) {
+        return (clean_string(&discrete.name, 55), clean_string(&discrete.driver, 30));
+    }
+
+    if let Some(first) = candidates.first() {
+        return (clean_string(&first.name, 55), clean_string(&first.driver, 30));
+    }
+
+    // Fallback: DRM sysfs query
+    let mut driver = String::from("drm");
     for card_num in 0..=4 {
         let uevent_path = format!("/sys/class/drm/card{}/device/uevent", card_num);
         if let Ok(content) = fs::read_to_string(&uevent_path) {
@@ -166,9 +228,7 @@ fn detect_gpu() -> (String, String) {
         }
     }
 
-    // Clean up name
-    gpu_name = clean_string(&gpu_name, 55);
-    (gpu_name, driver)
+    (String::from("Generic GPU"), driver)
 }
 
 fn detect_monitors() -> Vec<MonitorInfo> {
@@ -284,7 +344,7 @@ fn detect_ram_details() -> (String, u32, usize, usize) {
     let mut slots: usize = 4;
 
     if let Ok(output) = Command::new("/usr/bin/inxi")
-        .args(["-m", "--output", "json", "--output-file", "print"])
+        .args(["--tty", "-m", "--output", "json", "--output-file", "print"])
         .output()
     {
         if output.status.success() {

@@ -13,5 +13,5 @@ fi
 if [[ -x "${BIN}" ]]; then
     exec "${BIN}" --status
 else
-    echo '{"text":"🏆 OmaRank","tooltip":"OmaRank engine binary not found"}'
+    echo '{"text":" OmaRank","tooltip":"OmaRank engine binary not found"}'
 fi

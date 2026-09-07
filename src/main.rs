@@ -53,9 +53,9 @@ fn print_json(res: &score::OmaRankResult) {
 }
 
 fn print_bar_status(res: &score::OmaRankResult) {
-    let text = format!("{} {} {}", res.tier_icon, res.total_score, res.tier_name);
+    let text = format!("{} {} {}", res.tier_nerd_icon, res.total_score, res.tier_name);
     let tooltip = format!(
-        "🏆 OmaRank: {} / 100 ({})\n• {}\n\n• CPU: {} ({} threads)\n• GPU: {}\n• RAM: {:.1} GB\n• Display: {} @ {:.0}Hz\n\n[Left Click] View Hardware Breakdown & Survey",
+        " OmaRank: {} / 100 ({})\n• {}\n\n• CPU: {} ({} threads)\n• GPU: {}\n• RAM: {:.1} GB\n• Display: {} @ {:.0}Hz\n\n[Left Click] View Hardware Breakdown & Survey",
         res.total_score,
         res.tier_name,
         res.tier_quote,
@@ -73,7 +73,7 @@ fn print_bar_status(res: &score::OmaRankResult) {
         "score": res.total_score,
         "tier": res.tier_name,
         "color": res.tier_color,
-        "icon": res.tier_icon,
+        "icon": res.tier_nerd_icon,
         "nerd_icon": res.tier_nerd_icon,
     });
 
@@ -82,17 +82,17 @@ fn print_bar_status(res: &score::OmaRankResult) {
 
 fn print_terminal_banner(res: &score::OmaRankResult) {
     println!("\x1b[1;35m╔══════════════════════════════════════════════════════════════════════════════╗\x1b[0m");
-    println!("\x1b[1;35m║\x1b[0m  🏆 \x1b[1;37mOMARANK\x1b[0m • \x1b[1;36mOmarchy Hardware Benchmark & Community Survey Hub\x1b[0m         \x1b[1;35m║\x1b[0m");
+    println!("\x1b[1;35m║\x1b[0m   \x1b[1;37mOMARANK\x1b[0m • \x1b[1;36mOmarchy Hardware Benchmark & Community Survey Hub\x1b[0m         \x1b[1;35m║\x1b[0m");
     println!("\x1b[1;35m╚══════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
 
-    println!("  \x1b[1;36m🆔 BATTLESTATION ID:\x1b[0m    \x1b[1;35m{}\x1b[0m (Local privacy badge)", res.battlestation_id);
-    println!("  \x1b[1;36m🧬 BUILD ARCHETYPE:\x1b[0m     \x1b[1;36m{}\x1b[0m", res.archetype_signature);
-    println!("  \x1b[1;33m⭐ TOTAL OMASCORE:\x1b[0m      \x1b[1;32m{}/100\x1b[0m", res.total_score);
-    println!("  \x1b[1;34m🏅 RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m", res.tier_nerd_icon, res.tier_name);
-    println!("  \x1b[1;36m🌐 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} battlestations ({})", res.global_rank, res.total_machines, res.percentile_text);
-    println!("  \x1b[1;90m💬 CRITIC QUOTE:\x1b[0m        \"{}\"\n", res.tier_quote);
+    println!("  \x1b[1;36m󰌽 BATTLESTATION ID:\x1b[0m    \x1b[1;35m{}\x1b[0m (Local privacy badge)", res.battlestation_id);
+    println!("  \x1b[1;36m󰚥 BUILD ARCHETYPE:\x1b[0m     \x1b[1;36m{}\x1b[0m", res.archetype_signature);
+    println!("  \x1b[1;33m󰓅 TOTAL OMASCORE:\x1b[0m      \x1b[1;32m{}/100\x1b[0m", res.total_score);
+    println!("  \x1b[1;34m RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m", res.tier_nerd_icon, res.tier_name);
+    println!("  \x1b[1;36m󰩠 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} battlestations ({})", res.global_rank, res.total_machines, res.percentile_text);
+    println!("  \x1b[1;90m󰅟 CRITIC QUOTE:\x1b[0m        \"{}\"\n", res.tier_quote);
 
-    println!("  \x1b[1;37m📊 Hardware Component Score Breakdown:\x1b[0m");
+    println!("  \x1b[1;37m󰓅 Hardware Component Score Breakdown:\x1b[0m");
     println!("  • Processor (CPU):     {:>3}/100 {}", res.sub_scores.cpu, render_bar(res.sub_scores.cpu));
     println!("  • Graphics  (GPU):     {:>3}/100 {}", res.sub_scores.gpu, render_bar(res.sub_scores.gpu));
     println!("  • Memory    (RAM):     {:>3}/100 {}", res.sub_scores.ram, render_bar(res.sub_scores.ram));
@@ -100,7 +100,7 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
     println!("  • Display   (Monitor): {:>3}/100 {}", res.sub_scores.display, render_bar(res.sub_scores.display));
     println!("  • Storage   (Disk):    {:>3}/100 {}\n", res.sub_scores.storage, render_bar(res.sub_scores.storage));
 
-    println!("  \x1b[1;37m💻 Detected Hardware Specifications:\x1b[0m");
+    println!("  \x1b[1;37m󰍛 Detected Hardware Specifications:\x1b[0m");
     println!("  • Processor:   {} ({} Cores, {} Threads)", res.hardware.cpu_name, res.hardware.cpu_cores, res.hardware.cpu_threads);
     println!("  • Graphics:    {} [Driver: {}]", res.hardware.gpu_name, res.hardware.gpu_driver);
     println!("  • Motherboard: {} {} (Chipset: {}, BIOS: {})", res.hardware.mobo_vendor, res.hardware.mobo_name, res.hardware.chipset, res.hardware.mobo_bios);
@@ -111,7 +111,7 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
     println!("  • Storage:     {} ({})", res.hardware.storage_model, res.hardware.storage_type);
     println!("  • OS:          {}\n", res.hardware.os_name);
 
-    println!("  \x1b[1;36m🌐 OmaStat Community Ranking:\x1b[0m");
+    println!("  \x1b[1;36m󰩠 OmaStat Community Ranking:\x1b[0m");
     println!("  • {}", res.percentile_text);
     println!("  • Submit to anonymous community survey: \x1b[1;32momarank-engine --submit-survey\x1b[0m\n");
 }
@@ -125,7 +125,7 @@ fn render_bar(score: u32) -> String {
 
 fn print_ladder(res: &score::OmaRankResult) {
     println!("\x1b[1;32m╔════════════════════════════════════════════════════════════════════════════════════════════╗\x1b[0m");
-    println!("\x1b[1;32m║\x1b[0m  🌐 \x1b[1;37mOMASTAT GLOBAL HARDWARE LADDER & TIER LIST\x1b[0m ({} Active Battlestations)             \x1b[1;32m║\x1b[0m", res.total_machines);
+    println!("\x1b[1;32m║\x1b[0m   \x1b[1;37mOMASTAT GLOBAL HARDWARE LADDER & TIER LIST\x1b[0m ({} Active Battlestations)             \x1b[1;32m║\x1b[0m", res.total_machines);
     println!("\x1b[1;32m╚════════════════════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
 
     let tiers = [
@@ -152,7 +152,7 @@ fn print_ladder(res: &score::OmaRankResult) {
         if is_my_tier {
             println!("  \x1b[1;32m┌────────────────────────────────────────────────────────────────────────────────────────┐\x1b[0m");
             println!("  \x1b[1;32m│\x1b[0m \x1b[1;33m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[1;37m{:<27}\x1b[0m \x1b[1;32m{:<9}\x1b[0m \x1b[1;32m│\x1b[0m", t_badge, range, rank_span, icon, name, share);
-            println!("  \x1b[1;32m│\x1b[0m   \x1b[1;32m👉 WORLD RANK #{} [YOUR PC]\x1b[0m • Score: \x1b[1;37m{}/100\x1b[0m ({})                    \x1b[1;32m│\x1b[0m", res.global_rank, res.total_score, res.tier_name);
+            println!("  \x1b[1;32m│\x1b[0m   \x1b[1;32m󰄬 WORLD RANK #{} [YOUR PC]\x1b[0m • Score: \x1b[1;37m{}/100\x1b[0m ({})                    \x1b[1;32m│\x1b[0m", res.global_rank, res.total_score, res.tier_name);
             println!("  \x1b[1;32m└────────────────────────────────────────────────────────────────────────────────────────┘\x1b[0m");
         } else {
             println!("    \x1b[1;30m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[0;37m{:<27}\x1b[0m \x1b[90m{:<9}\x1b[0m", t_badge, range, rank_span, icon, name, share);

@@ -73,10 +73,14 @@ Panel {
     }
   }
 
+  property string copyToastMsg: ""
+
   function copyToClipboard(val) {
     if (!val) return
     copyProc.command = ["wl-copy", String(val)]
     copyProc.running = true
+    root.copyToastMsg = "Copied spec to clipboard"
+    copyToastTimer.restart()
   }
 
   function launchDashboard() {
@@ -142,38 +146,38 @@ Panel {
           if (d.hardware) {
             var rawCpu = String(d.hardware.cpu_name || "")
             var cleanCpu = rawCpu.replace(/Intel\(R\)\s+Core\(TM\)\s+/g, "").replace(/AMD\s+Ryzen\s+/g, "Ryzen ").trim()
-            var threads = d.hardware.cpu_threads ? (" (" + d.hardware.cpu_threads + "T)") : ""
-            root.cpuDesc = root.cleanSanitized(cleanCpu + threads, 30)
+            var threads = d.hardware.cpu_threads ? (" (" + d.hardware.cpu_threads + " Threads)") : ""
+            root.cpuDesc = root.cleanSanitized(cleanCpu + threads, 65)
 
             var rawGpu = String(d.hardware.gpu_name || "")
-            var gpuMatch = rawGpu.match(/\[(.*?)\]/)
-            var cleanGpu = gpuMatch ? gpuMatch[1] : rawGpu.replace(/Intel Corporation /g, "").replace(/Advanced Micro Devices, Inc\. /g, "").replace(/NVIDIA Corporation /g, "").trim()
-            root.gpuDesc = root.cleanSanitized(cleanGpu, 30)
+            var cleanGpu = rawGpu.replace(/NVIDIA Corporation /g, "").replace(/Advanced Micro Devices, Inc\. /g, "").replace(/Intel Corporation /g, "").trim()
+            root.gpuDesc = root.cleanSanitized(cleanGpu, 65)
 
             var ramType = d.hardware.ram_type || "RAM"
-            var ramSpeed = d.hardware.ram_speed_mts ? ("-" + d.hardware.ram_speed_mts) : ""
-            var ramGb = Math.round(Number(d.hardware.ram_total_gb) || 0)
-            root.ramDesc = root.cleanSanitized(ramGb + "GB " + ramType + ramSpeed, 24)
+            var ramSpeed = d.hardware.ram_speed_mts ? (" @ " + d.hardware.ram_speed_mts + " MT/s") : ""
+            var ramGb = (Number(d.hardware.ram_total_gb) || 0).toFixed(1)
+            root.ramDesc = root.cleanSanitized(ramGb + " GB " + ramType + ramSpeed, 65)
 
             var moboName = String(d.hardware.mobo_name || "").replace(/DDR4/g, "").replace(/DDR5/g, "").trim()
+            var vendor = String(d.hardware.mobo_vendor || "").trim()
             var chipset = String(d.hardware.chipset || "").replace(/Intel /g, "").replace(/AMD /g, "").trim()
-            if (chipset && moboName && !moboName.includes(chipset)) {
-              root.moboDesc = root.cleanSanitized(moboName + " (" + chipset + ")", 28)
-            } else if (moboName) {
-              root.moboDesc = root.cleanSanitized(moboName, 28)
-            } else {
-              root.moboDesc = root.cleanSanitized(chipset || "Motherboard", 28)
+            var fullMobo = moboName
+            if (vendor && !moboName.toLowerCase().includes(vendor.toLowerCase())) {
+              fullMobo = vendor + " " + moboName
             }
+            if (chipset && !fullMobo.includes(chipset) && chipset !== "Mainstream Chipset") {
+              fullMobo = fullMobo + " (" + chipset + ")"
+            }
+            root.moboDesc = root.cleanSanitized(fullMobo, 65)
 
             var rawStorage = String(d.hardware.storage_model || d.hardware.storage_type || "NVMe")
-            var cleanStorage = rawStorage.replace(/Samsung SSD\s+/gi, "").replace(/Crucial\s+/gi, "").replace(/Western Digital\s+/gi, "WD ").trim()
-            root.storageDesc = root.cleanSanitized(cleanStorage, 26)
+            root.storageDesc = root.cleanSanitized(rawStorage, 65)
 
             if (d.hardware.monitors && d.hardware.monitors.length > 0) {
               var m = d.hardware.monitors[0]
-              root.displayDesc = root.cleanSanitized(m.width + "x" + m.height + " @" + Math.round(m.refresh_rate) + "Hz", 30)
+              root.displayDesc = root.cleanSanitized(m.width + "x" + m.height + " @" + Math.round(m.refresh_rate) + "Hz (" + m.name + ")", 65)
             }
-            root.osDesc = root.cleanSanitized(d.hardware.os_name ? (d.hardware.os_name + " Linux") : "Omarchy Linux", 24)
+            root.osDesc = root.cleanSanitized(d.hardware.os_name || "Omarchy Linux", 35)
           }
         } catch(e) {
           // Preserve previous state on parse errors
@@ -241,13 +245,20 @@ Panel {
     }
   }
 
-  // Top Bar Icon: Only the rank Nerd Font glyph, theme-colored, no text!
+  Timer {
+    id: copyToastTimer
+    interval: 2000
+    repeat: false
+    onTriggered: root.copyToastMsg = ""
+  }
+
+  // Top Bar Icon: Dynamic rank Nerd Font glyph matching current score tier!
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: ""
-    tooltipText: "OmaRank Benchmark"
+    text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
+    tooltipText: "OmaRank: " + root.tierName + " (" + (root.totalScore > 0 ? (root.totalScore + "/100") : "Calculating...") + ")"
     onPressed: function(b) {
       if (root.opened) root.close()
       else root.open()
@@ -260,7 +271,7 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    contentWidth: panel.fittedContentWidth(Style.space(480))
+    contentWidth: panel.fittedContentWidth(Style.space(520))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     Column {
@@ -355,78 +366,186 @@ Panel {
         }
       }
 
-      // ---------- Hardware Specs Telemetry Grid (Exact 4-Column Omarchy Style) ----------
+      // ---------- Hardware Specs Telemetry (Unclipped Modern Omarchy Cards) ----------
       Column {
         width: parent.width
-        spacing: Style.spacing.labelGap
+        spacing: Style.space(6)
 
         GridLayout {
           width: parent.width
-          columns: 4
-          columnSpacing: Style.space(16)
-          rowSpacing: Style.spacing.labelGap
+          columns: 2
+          columnSpacing: Style.space(14)
+          rowSpacing: Style.space(5)
 
-          InfoLabel { text: "Processor" }
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󰍛"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Processor" }
+          }
           DetailValue {
             text: root.cpuDesc
             copyable: true
-            tooltipText: "Copy CPU info"
+            tooltipText: "Click to copy CPU: " + root.cpuDesc
           }
-          InfoLabel { text: "Graphics" }
+
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󰢮"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Graphics" }
+          }
           DetailValue {
             text: root.gpuDesc
             copyable: true
-            tooltipText: "Copy GPU info"
+            tooltipText: "Click to copy GPU: " + root.gpuDesc
           }
 
-          InfoLabel { text: "Memory" }
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󰘚"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Memory" }
+          }
           DetailValue {
             text: root.ramDesc
             copyable: true
-            tooltipText: "Copy RAM info"
-          }
-          InfoLabel { text: "Motherboard" }
-          DetailValue {
-            text: root.moboDesc
-            copyable: true
-            tooltipText: "Copy Motherboard info"
+            tooltipText: "Click to copy RAM: " + root.ramDesc
           }
 
-          InfoLabel { text: "Storage" }
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󰋊"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Storage" }
+          }
           DetailValue {
             text: root.storageDesc
             copyable: true
-            tooltipText: "Copy Storage info"
+            tooltipText: "Click to copy Storage: " + root.storageDesc
           }
-          InfoLabel { text: "Display" }
+
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󰌢"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Display" }
+          }
           DetailValue {
             text: root.displayDesc
             copyable: true
-            tooltipText: "Copy Display info"
+            tooltipText: "Click to copy Display: " + root.displayDesc
           }
 
-          InfoLabel { text: "World Rank" }
-          DetailValue {
-            text: root.worldRankDesc
-            copyable: true
-            tooltipText: root.percentileText
+          RowLayout {
+            spacing: Style.space(6)
+            Text {
+              textFormat: Text.PlainText
+              text: "󱤓"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.5
+            }
+            InfoLabel { text: "Motherboard" }
           }
-          InfoLabel { text: "Total Score" }
           DetailValue {
-            text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " / 100"
+            text: root.moboDesc
+            copyable: true
+            tooltipText: "Click to copy Motherboard: " + root.moboDesc
+          }
+        }
+
+        // Battlestation ID & Archetype Sub-Row
+        Item {
+          width: parent.width
+          implicitHeight: Style.space(18)
+
+          RowLayout {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(4)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "󰌽"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.4
+            }
+            Text {
+              textFormat: Text.PlainText
+              text: "ID: " + root.battlestationId
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.6
+            }
           }
 
-          InfoLabel { text: "Battlestation" }
-          DetailValue {
-            text: root.battlestationId
-            copyable: true
-            tooltipText: "Local Battlestation ID: " + root.battlestationId
+          Text {
+            visible: root.copyToastMsg.length > 0
+            textFormat: Text.PlainText
+            text: root.copyToastMsg
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+            color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+            anchors.centerIn: parent
           }
-          InfoLabel { text: "Archetype" }
-          DetailValue {
-            text: root.archetypeSignature
-            copyable: true
-            tooltipText: "Hardware Build Archetype: " + root.archetypeSignature
+
+          RowLayout {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(4)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "󰚥"
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.4
+            }
+            Text {
+              textFormat: Text.PlainText
+              text: root.archetypeSignature
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.6
+            }
           }
         }
       }
@@ -540,13 +659,24 @@ Panel {
               Layout.fillWidth: true
               spacing: Style.space(2)
 
-              Text {
-                textFormat: Text.PlainText
-                text: root.tierName
-                color: root.bar ? root.bar.foreground : Color.foreground
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
+              RowLayout {
+                spacing: Style.space(8)
+                Text {
+                  textFormat: Text.PlainText
+                  text: root.tierName
+                  color: root.bar ? root.bar.foreground : Color.foreground
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+                Text {
+                  visible: root.percentileText.length > 0
+                  textFormat: Text.PlainText
+                  text: "• " + root.percentileText
+                  color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
               }
 
               Text {
@@ -562,10 +692,11 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: "󰌾"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " pts"
+              color: root.bar ? root.bar.foreground : Color.foreground
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.subtitle
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
               Layout.alignment: Qt.AlignVCenter
             }
           }

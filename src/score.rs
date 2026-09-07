@@ -342,7 +342,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
     match score {
         96..=100 => (
             "Cosmic Reality Simulator".to_string(),
-            "🌌".to_string(),
+            "".to_string(),
             "".to_string(),
             "Is this a quantum supercomputer? The pinnacle of silicon evolution.".to_string(),
             "#a855f7".to_string(),
@@ -350,7 +350,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         89..=95 => (
             "NASA Supercomputer".to_string(),
-            "🛸".to_string(),
+            "󰓅".to_string(),
             "󰓅".to_string(),
             "Hyprland bowed in respect before the kernel even finished booting.".to_string(),
             "#6366f1".to_string(),
@@ -358,7 +358,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         76..=88 => (
             "Cyberpunk Beast".to_string(),
-            "🚀".to_string(),
+            "".to_string(),
             "".to_string(),
             "High-refresh DSC + heavy silicon. Wayland animations glide like liquid butter.".to_string(),
             "#38bdf8".to_string(),
@@ -366,7 +366,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         61..=75 => (
             "Gaming Chair Missing".to_string(),
-            "🏎️".to_string(),
+            "".to_string(),
             "".to_string(),
             "High refresh rate, solid GPU. Now you can only blame your own reflexes.".to_string(),
             "#22c55e".to_string(),
@@ -374,7 +374,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         46..=60 => (
             "Honest Daily Driver".to_string(),
-            "🚗".to_string(),
+            "".to_string(),
             "".to_string(),
             "Reliable workhorse. Won't break records, won't break a sweat. Perfectly balanced.".to_string(),
             "#eab308".to_string(),
@@ -382,7 +382,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         31..=45 => (
             "Budget Warrior".to_string(),
-            "🚲".to_string(),
+            "".to_string(),
             "".to_string(),
             "Proud veteran silicon. Smooth in 720p, doubles as a space heater on 1080p60.".to_string(),
             "#f97316".to_string(),
@@ -390,7 +390,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         16..=30 => (
             "Study Mode Only".to_string(),
-            "📻".to_string(),
+            "".to_string(),
             "".to_string(),
             "Fans are quiet as long as you only open LibreOffice and htop. Don't push your luck.".to_string(),
             "#ef4444".to_string(),
@@ -398,7 +398,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
         ),
         _ => (
             "Potato Toaster".to_string(),
-            "🥔".to_string(),
+            "".to_string(),
             "".to_string(),
             "You installed Arch on a microwave. The cooling fans are screaming for mercy.".to_string(),
             "#94a3b8".to_string(),
