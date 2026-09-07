@@ -216,15 +216,15 @@ Panel {
     interval: 5000
     repeat: false
     onTriggered: {
-      if (launchProc.running) launchProc.kill()
+      if (launchProc.running) launchProc.running = false
     }
   }
 
   Component.onDestruction: {
-    if (statusProc.running) statusProc.kill()
-    if (surveyProc.running) surveyProc.kill()
-    if (copyProc.running) copyProc.kill()
-    if (launchProc.running) launchProc.kill()
+    if (statusProc.running) statusProc.running = false
+    if (surveyProc.running) surveyProc.running = false
+    if (copyProc.running) copyProc.running = false
+    if (launchProc.running) launchProc.running = false
   }
 
   Component.onCompleted: {
@@ -247,6 +247,7 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
+    slotSize: Style.bar.statusSlot
     tooltipText: "OmaRank: " + root.tierName + " (" + (root.totalScore > 0 ? root.totalScore : "--") + " / 100)"
 
     onPressed: function(b) {
