@@ -246,10 +246,8 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
-    slotSize: Style.bar.statusSlot
-    tooltipText: "OmaRank: " + root.tierName + " (" + (root.totalScore > 0 ? root.totalScore : "--") + " / 100)"
-
+    text: ""
+    tooltipText: "OmaRank Benchmark"
     onPressed: function(b) {
       if (root.opened) root.close()
       else root.open()
