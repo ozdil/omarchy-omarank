@@ -7,10 +7,22 @@ BIN="${DIR}/omarank-engine"
 if [[ ! -x "${BIN}" ]]; then
     if command -v omarank-engine >/dev/null 2>&1; then
         BIN="$(command -v omarank-engine)"
-    else
-        echo "Error: omarank-engine binary not found."
-        exit 1
+    elif command -v cargo >/dev/null 2>&1; then
+        echo "Building omarank-engine from source..."
+        (cd "${DIR}" && cargo build --release --quiet && cp "target/release/omarank-engine" "${BIN}" && chmod +x "${BIN}") || true
     fi
+fi
+
+if [[ ! -x "${BIN}" ]]; then
+    if command -v curl >/dev/null 2>&1; then
+        echo "Downloading prebuilt omarank-engine..."
+        curl -fsSL "https://github.com/ozdil/omarchy-omarank/releases/download/v1.1.0/omarank-engine" -o "${BIN}" 2>/dev/null && chmod +x "${BIN}" || true
+    fi
+fi
+
+if [[ ! -x "${BIN}" ]]; then
+    echo "Error: omarank-engine binary not found."
+    exit 1
 fi
 
 clear
