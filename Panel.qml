@@ -40,6 +40,8 @@ Panel {
   property string storageDesc: "--"
   property string worldRankDesc: "--"
   property string osDesc: "Omarchy Linux"
+  property string battlestationId: "OMA-????"
+  property string archetypeSignature: "OMA-BUILD"
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
@@ -121,6 +123,8 @@ Panel {
           root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
           root.tierQuote = root.cleanSanitized(d.tier_quote || "", 140)
           root.percentileText = root.cleanSanitized(d.percentile_text || "", 100)
+          root.battlestationId = root.cleanSanitized(d.battlestation_id || "OMA-????", 24)
+          root.archetypeSignature = root.cleanSanitized(d.archetype_signature || "OMA-BUILD", 30)
 
           if (root.globalRank > 0) {
             root.worldRankDesc = "#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString()
@@ -411,6 +415,19 @@ Panel {
           InfoLabel { text: "Total Score" }
           DetailValue {
             text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " / 100"
+          }
+
+          InfoLabel { text: "Battlestation" }
+          DetailValue {
+            text: root.battlestationId
+            copyable: true
+            tooltipText: "Local Battlestation ID: " + root.battlestationId
+          }
+          InfoLabel { text: "Archetype" }
+          DetailValue {
+            text: root.archetypeSignature
+            copyable: true
+            tooltipText: "Hardware Build Archetype: " + root.archetypeSignature
           }
         }
       }

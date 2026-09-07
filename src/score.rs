@@ -23,6 +23,8 @@ pub struct OmaRankResult {
     pub tier_color: String,
     pub sub_scores: SubScores,
     pub percentile_text: String,
+    pub battlestation_id: String,
+    pub archetype_signature: String,
     pub hardware: HardwareInfo,
 }
 
@@ -54,6 +56,9 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
     let pct = (global_rank as f64 / total_machines as f64) * 100.0;
     let percentile_text = format!("Top {:.1}% (#{} of {} machines globally)", pct, global_rank, total_machines);
 
+    let battlestation_id = generate_local_battlestation_id();
+    let archetype_signature = generate_archetype_signature(hw);
+
     OmaRankResult {
         total_score,
         global_rank,
@@ -72,6 +77,8 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
             storage: storage_score,
         },
         percentile_text,
+        battlestation_id,
+        archetype_signature,
         hardware: hw.clone(),
     }
 }
@@ -422,6 +429,76 @@ fn calculate_global_rank(score: u32, _hw_seed: u64, total_machines: u32) -> u32 
 
     let base = (pct * total_machines as f64).round() as u32;
     base.max(1).min(total_machines)
+}
+
+fn generate_local_battlestation_id() -> String {
+    let seed = if let Ok(id_str) = std::fs::read_to_string("/etc/machine-id") {
+        let trimmed = id_str.trim();
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in "omarchy-battlestation-salt:".bytes().chain(trimmed.bytes()) {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    } else {
+        let mut h: u64 = 0xcbf29ce484222325;
+        if let Ok(host) = std::env::var("HOSTNAME") {
+            for b in host.bytes() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+        }
+        h
+    };
+
+    let p1 = (seed >> 32) as u32 & 0xFFFF;
+    let p2 = (seed & 0xFFFF) as u32;
+    format!("OMA-{:04X}-{:04X}", p1, p2)
+}
+
+fn generate_archetype_signature(hw: &HardwareInfo) -> String {
+    let cpu_part = if hw.cpu_name.contains("Ultra 9") {
+        "U9"
+    } else if hw.cpu_name.contains("Ultra 7") {
+        "U7"
+    } else if hw.cpu_name.contains("Ultra 5") {
+        "U5"
+    } else if hw.cpu_name.contains("Ryzen 9") {
+        "R9"
+    } else if hw.cpu_name.contains("Ryzen 7") {
+        "R7"
+    } else if hw.cpu_name.contains("Ryzen 5") {
+        "R5"
+    } else if hw.cpu_name.contains("i9") {
+        "I9"
+    } else if hw.cpu_name.contains("i7") {
+        "I7"
+    } else if hw.cpu_name.contains("i5") {
+        "I5"
+    } else {
+        "CPU"
+    };
+
+    let gpu_part = if hw.gpu_name.contains("RTX 4090") {
+        "4090"
+    } else if hw.gpu_name.contains("RTX 4080") {
+        "4080"
+    } else if hw.gpu_name.contains("RTX 4070") {
+        "4070"
+    } else if hw.gpu_name.contains("RTX 4060") {
+        "4060"
+    } else if hw.gpu_name.contains("Intel Arc") || hw.gpu_name.contains("Meteor Lake") {
+        "ARC"
+    } else if hw.gpu_name.contains("Radeon") {
+        "RADEON"
+    } else {
+        "GPU"
+    };
+
+    let ram_gb = (hw.ram_total_gb.round() as u32).to_string();
+    let hz = hw.monitors.first().map(|m| format!("{:.0}H", m.refresh_rate)).unwrap_or_else(|| "60H".into());
+
+    format!("OMA-{}-{}-{}G-{}", cpu_part, gpu_part, ram_gb, hz)
 }
 
 #[cfg(test)]

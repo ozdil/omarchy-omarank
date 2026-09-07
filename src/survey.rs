@@ -25,6 +25,7 @@ pub struct OmaStatPayload {
     pub storage_type: String,
     pub storage_model: String,
     pub os_name: String,
+    pub archetype_signature: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -108,6 +109,7 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
         storage_type: result.hardware.storage_type.clone(),
         storage_model: result.hardware.storage_model.clone(),
         os_name: result.hardware.os_name.clone(),
+        archetype_signature: result.archetype_signature.clone(),
     }
 }
 
@@ -151,7 +153,7 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
                 (true, "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string())
             } else {
                 // In offline mode or staging, local state is still preserved
-                (true, "OmaStat survey payload registered locally (Offline mode)".to_string())
+                (true, "✓ Profile saved locally (Awaiting OmaStat community server deployment)".to_string())
             }
         }
         Err(e) => (false, format!("Survey submission error: {}", e)),

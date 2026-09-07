@@ -85,6 +85,8 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
     println!("\x1b[1;35m║\x1b[0m  🏆 \x1b[1;37mOMARANK\x1b[0m • \x1b[1;36mOmarchy Hardware Benchmark & Community Survey Hub\x1b[0m         \x1b[1;35m║\x1b[0m");
     println!("\x1b[1;35m╚══════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
 
+    println!("  \x1b[1;36m🆔 BATTLESTATION ID:\x1b[0m    \x1b[1;35m{}\x1b[0m (Local privacy badge)", res.battlestation_id);
+    println!("  \x1b[1;36m🧬 BUILD ARCHETYPE:\x1b[0m     \x1b[1;36m{}\x1b[0m", res.archetype_signature);
     println!("  \x1b[1;33m⭐ TOTAL OMASCORE:\x1b[0m      \x1b[1;32m{}/100\x1b[0m", res.total_score);
     println!("  \x1b[1;34m🏅 RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m", res.tier_nerd_icon, res.tier_name);
     println!("  \x1b[1;36m🌐 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} battlestations ({})", res.global_rank, res.total_machines, res.percentile_text);
