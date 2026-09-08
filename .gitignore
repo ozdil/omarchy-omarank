@@ -3,3 +3,5 @@ pkg/
 *.pkg.tar.zst
 *.log
 .DS_Store
+omarank-engine
+*.tmp_*

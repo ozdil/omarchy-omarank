@@ -45,7 +45,7 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
         + (display_score as f64 * 0.15)
         + (storage_score as f64 * 0.05);
 
-    let total_score = (total.round() as u32).min(100).max(1);
+    let total_score = (total.round() as u32).clamp(1, 100);
 
     let total_machines = 12480;
     let hw_seed = calculate_hw_seed(hw);
@@ -123,7 +123,7 @@ fn score_cpu(cores: usize, threads: usize, mhz: f64) -> u32 {
         s -= 8.0;
     }
 
-    (s.round() as u32).min(100).max(5)
+    (s.round() as u32).clamp(5, 100)
 }
 
 fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
@@ -186,7 +186,7 @@ fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
         s += 6.0;
     }
 
-    (s.round() as u32).min(100).max(5)
+    (s.round() as u32).clamp(5, 100)
 }
 
 fn score_gpu(name: &str, driver: &str) -> u32 {
@@ -279,7 +279,7 @@ fn score_display(monitors: &[crate::hardware::MonitorInfo]) -> u32 {
         max_score += (monitors.len() as f64 - 1.0) * 4.0;
     }
 
-    (max_score.round() as u32).min(100).max(10)
+    (max_score.round() as u32).clamp(10, 100)
 }
 
 fn score_mobo(chipset: &str, mobo_name: &str) -> u32 {
@@ -308,7 +308,7 @@ fn score_mobo(chipset: &str, mobo_name: &str) -> u32 {
         s += 2.0;
     }
 
-    (s.round() as u32).min(100).max(10)
+    (s.round() as u32).clamp(10, 100)
 }
 
 fn score_storage(storage_type: &str, storage_model: &str) -> u32 {

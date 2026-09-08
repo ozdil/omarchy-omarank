@@ -1,6 +1,7 @@
 mod hardware;
 mod score;
 mod survey;
+pub mod subproc;
 
 use std::env;
 

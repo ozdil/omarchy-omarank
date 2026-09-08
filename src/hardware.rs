@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::process::Command;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitorInfo {
@@ -36,12 +36,13 @@ pub struct HardwareInfo {
 }
 
 pub fn detect_hardware() -> HardwareInfo {
+    let deadline = Instant::now() + Duration::from_millis(3500);
     let (cpu_name, cpu_cores, cpu_threads, cpu_mhz) = detect_cpu();
     let (ram_total_mb, ram_total_gb) = detect_ram();
-    let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details();
-    let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard();
-    let (gpu_name, gpu_driver) = detect_gpu();
-    let monitors = detect_monitors();
+    let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details(deadline);
+    let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard(deadline);
+    let (gpu_name, gpu_driver) = detect_gpu(deadline);
+    let monitors = detect_monitors(deadline);
     let (storage_type, storage_model) = detect_storage();
     let os_name = detect_os();
 
@@ -127,26 +128,27 @@ fn detect_ram() -> (u64, f64) {
     (total_mb, (total_gb * 10.0).round() / 10.0)
 }
 
-fn detect_gpu() -> (String, String) {
+fn detect_gpu(deadline: Instant) -> (String, String) {
     // 1. If nvidia-smi is available, query exact discrete GPU model and driver
-    if let Ok(output) = Command::new("/usr/bin/nvidia-smi")
-        .args(["--query-gpu=gpu_name,driver_version", "--format=csv,noheader"])
-        .output()
-    {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(first_line) = stdout.lines().next() {
-                let parts: Vec<&str> = first_line.split(',').collect();
-                if !parts.is_empty() {
-                    let name = parts[0].trim();
-                    let drv = if parts.len() > 1 {
-                        format!("nvidia {}", parts[1].trim())
-                    } else {
-                        "nvidia".to_string()
-                    };
-                    if !name.is_empty() {
-                        return (clean_string(name, 55), clean_string(&drv, 30));
-                    }
+    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
+        "/usr/bin/nvidia-smi",
+        &["--query-gpu=gpu_name,driver_version", "--format=csv,noheader"],
+        &[],
+        deadline,
+        4096,
+    ) {
+        let stdout = String::from_utf8_lossy(&stdout_bytes);
+        if let Some(first_line) = stdout.lines().next() {
+            let parts: Vec<&str> = first_line.split(',').collect();
+            if !parts.is_empty() {
+                let name = parts[0].trim();
+                let drv = if parts.len() > 1 {
+                    format!("nvidia {}", parts[1].trim())
+                } else {
+                    "nvidia".to_string()
+                };
+                if !name.is_empty() {
+                    return (clean_string(name, 55), clean_string(&drv, 30));
                 }
             }
         }
@@ -160,13 +162,18 @@ fn detect_gpu() -> (String, String) {
     }
     let mut candidates: Vec<GpuCandidate> = Vec::new();
 
-    if let Ok(output) = Command::new("/usr/bin/lspci").arg("-mm").output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let parts: Vec<&str> = line.split('"').collect();
-                if parts.len() >= 4 {
-                    let class = parts[1].trim();
+    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
+        "/usr/bin/lspci",
+        &["-mm"],
+        &[],
+        deadline,
+        65536,
+    ) {
+        let stdout = String::from_utf8_lossy(&stdout_bytes);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split('"').collect();
+            if parts.len() >= 4 {
+                let class = parts[1].trim();
                     if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
                         let slot_raw = parts[0].trim();
                         let slot = if slot_raw.contains(':') { slot_raw } else { "" };
@@ -201,7 +208,6 @@ fn detect_gpu() -> (String, String) {
                 }
             }
         }
-    }
 
     if let Some(discrete) = candidates.iter().find(|c| c.is_discrete) {
         return (clean_string(&discrete.name, 55), clean_string(&discrete.driver, 30));
@@ -231,16 +237,28 @@ fn detect_gpu() -> (String, String) {
     (String::from("Generic GPU"), driver)
 }
 
-fn detect_monitors() -> Vec<MonitorInfo> {
+fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
     let mut list = Vec::new();
 
+    let mut extra_envs = Vec::new();
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+    if !runtime_dir.is_empty() {
+        extra_envs.push(("XDG_RUNTIME_DIR", runtime_dir.as_str()));
+    }
+    let hypr_sig = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default();
+    if !hypr_sig.is_empty() {
+        extra_envs.push(("HYPRLAND_INSTANCE_SIGNATURE", hypr_sig.as_str()));
+    }
+
     // Query Hyprland monitors via IPC
-    if let Ok(output) = Command::new("/usr/bin/hyprctl")
-        .args(["-j", "monitors"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
+        "/usr/bin/hyprctl",
+        &["-j", "monitors"],
+        &extra_envs,
+        deadline,
+        65536,
+    ) {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
                 if let Some(arr) = val.as_array() {
                     for m in arr {
                         let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
@@ -260,7 +278,6 @@ fn detect_monitors() -> Vec<MonitorInfo> {
                 }
             }
         }
-    }
 
     // Fallback if hyprctl returned empty
     if list.is_empty() {
@@ -276,7 +293,7 @@ fn detect_monitors() -> Vec<MonitorInfo> {
     list
 }
 
-fn detect_motherboard() -> (String, String, String, String) {
+fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     let mut vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor")
         .or_else(|_| fs::read_to_string("/sys/class/dmi/id/sys_vendor"))
         .unwrap_or_else(|_| "Generic".into());
@@ -291,8 +308,14 @@ fn detect_motherboard() -> (String, String, String, String) {
         .unwrap_or_else(|_| "Unknown".into());
 
     let mut chipset = String::from("Mainstream Chipset");
-    if let Ok(output) = Command::new("/usr/bin/lspci").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
+        "/usr/bin/lspci",
+        &[],
+        &[],
+        deadline,
+        65536,
+    ) {
+        let stdout = String::from_utf8_lossy(&stdout_bytes);
         for line in stdout.lines() {
             if line.contains("ISA bridge:") || line.contains("Host bridge:") || line.contains("SMBus:") {
                 if let Some(idx) = line.find("Intel Corporation ") {
@@ -337,18 +360,20 @@ fn detect_motherboard() -> (String, String, String, String) {
     )
 }
 
-fn detect_ram_details() -> (String, u32, usize, usize) {
+fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
     let mut ram_type = String::from("DDR4");
     let mut speed_mts: u32 = 3200;
     let mut modules: usize = 0;
     let mut slots: usize = 4;
 
-    if let Ok(output) = Command::new("/usr/bin/inxi")
-        .args(["--tty", "-m", "--output", "json", "--output-file", "print"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
+        "/usr/bin/inxi",
+        &["--tty", "-m", "--output", "json", "--output-file", "print"],
+        &[],
+        deadline,
+        65536,
+    ) {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
                 if let Some(arr) = val.as_array() {
                     for section in arr {
                         if let Some(obj) = section.as_object() {
@@ -397,7 +422,6 @@ fn detect_ram_details() -> (String, u32, usize, usize) {
                 }
             }
         }
-    }
 
     if modules == 0 {
         modules = 2;
