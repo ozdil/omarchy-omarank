@@ -1,103 +1,104 @@
-# 🏆 OmaRank (`ozdil.omarank`)
+# OmaRank - Hardware Benchmarking and Tier Ranking for Omarchy Linux
 
-[![Omarchy Plugin](https://img.shields.io/badge/Omarchy-Plugin-blue.svg)](https://omarchy.org)
-[![Rust](https://img.shields.io/badge/Rust-1.98+-orange.svg)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Security: Hardened](https://img.shields.io/badge/Security-Marketplace%20Baseline%20Passed-green.svg)](#security--privacy)
+Hardware benchmarking and tier-ranking plugin for the Omarchy desktop environment.
 
-**OmaRank** is a hardware benchmarking and tier-ranking plugin for the [Omarchy](https://omarchy.org) desktop environment. Built with a high-performance **Rust engine**, it benchmarks your silicon, assigns a humorous title from the **OmaRank Tier Ladder**, renders a sleek Quickshell bar widget with an interactive popover, and provides an opt-in anonymous hardware survey hub (**OmaStat**).
-
-<p align="center">
-  <img src="preview.png" alt="OmaRank Quickshell Bar Widget & Popover" width="480">
-</p>
+Author: Ozan Ozdil (ozdil)  
+License: MIT  
+Plugin ID: ozdil.omarank
 
 ---
 
-## 🌟 Highlights
+## Highlights
 
-- ⚡ **Native Rust Engine (`omarank-engine`)**: Fast, zero-overhead hardware detection directly from Linux sysfs (`/proc/cpuinfo`, `/proc/meminfo`, `/sys/class/drm/`, `/sys/class/dmi/id/`, `lspci`, `inxi`, `hyprctl`).
-- 🎯 **0–100 Weighted OmaScore (6-Component Breakdown)**:
-  - **CPU (24%)**: Physical cores, hyperthreads, clockspeed.
-  - **GPU (32%)**: Dedicated GPU tier, driver classification (`xe`, `amdgpu`, `nvidia`).
-  - **RAM (16%)**: Generation (DDR3/DDR4/DDR5), speed in MT/s, multi-channel slots, capacity.
-  - **Motherboard (8%)**: Chipset tiers (Z890, Z790, B760, X870E, B650, etc.) and enthusiast series recognition.
-  - **Display (15%)**: High-refresh gaming/ultrawide panel detection (e.g. 5120x1440 @ 240Hz DSC).
-  - **Storage (5%)**: NVMe model recognition (e.g. Samsung 990 PRO) and PCIe Gen4/5 vs SATA/HDD.
-- 🌐 **OmaStat Global Leaderboard & Tier Matrix**:
-  - Deterministic World Rank position (e.g. `#1,021` of 12,480 battlestations globally).
-  - Complete S+ to F Tier matrix highlighting your battlestation (`omarank-engine --ladder`).
-- 🎨 **Native Quickshell Bar Widget (`Panel.qml`)**:
-  - Monochrome Nerd Font rank icon in the top bar matching native Omarchy bar widgets (``).
+- Native Rust Engine (`omarank-engine`): Fast, zero-overhead hardware detection directly from Linux sysfs (`/proc/cpuinfo`, `/proc/meminfo`, `/sys/class/drm/`, `/sys/class/dmi/id/`, `lspci`, `inxi`, `hyprctl`).
+- 0 to 100 Weighted OmaScore (6-Component Breakdown):
+  - CPU (24%): Physical cores, hyperthreads, clock speed.
+  - GPU (32%): Dedicated GPU tier, driver classification (`xe`, `amdgpu`, `nvidia`).
+  - RAM (16%): Generation (DDR3/DDR4/DDR5), transfer speed in MT/s, multi-channel slots, capacity.
+  - Motherboard (8%): Chipset tiers and enthusiast series recognition.
+  - Display (15%): High-refresh gaming and ultrawide panel detection.
+  - Storage (5%): NVMe model recognition and PCIe generation classification.
+- OmaStat Global Leaderboard and Tier Matrix:
+  - Deterministic World Rank position estimation.
+  - Complete S+ to F Tier matrix highlighting system capability.
+- Native Quickshell Bar Widget (`Panel.qml`):
+  - Monochrome Nerd Font rank icon in the top bar matching native Omarchy bar widgets.
   - 4-column telemetry grid for Processor, Graphics, Memory, Motherboard, Storage, Display, World Rank, and Total Score.
   - 6-pill segmented sub-score breakdown row.
-  - Clean, icon-free action buttons and system verdict card.
-- 📡 **OmaStat Community Survey**:
-  - Optional, privacy-preserving hardware survey similar to the Steam Hardware Survey.
-  - 100% anonymous: strictly zero personal data, zero MAC addresses, zero IP logging, zero usernames, zero hardware serial numbers.
+  - Clean action buttons and system verdict card.
+- OmaStat Community Survey:
+  - Optional, privacy-preserving hardware survey.
+  - 100% anonymous: zero personal data, zero MAC addresses, zero IP logging, zero usernames, zero hardware serial numbers.
 
 ---
 
-## 🪜 The OmaRank Tier Ladder
+## The OmaRank Tier Ladder
 
-| OmaScore | Icon | Rank Tier | Critic Quote |
-| :---: | :---: | :--- | :--- |
-| **96–100** | 🌌 | **Cosmic Reality Simulator** | *Is this a quantum supercomputer? The pinnacle of silicon evolution.* |
-| **89–95** | 🛸 | **NASA Supercomputer** | *Hyprland bowed in respect before the kernel even finished booting.* |
-| **76–88** | 🚀 | **Cyberpunk Beast** | *High-refresh DSC + heavy silicon. Wayland animations glide like liquid butter.* |
-| **61–75** | 🏎️ | **Gaming Chair Missing** | *High refresh rate, solid GPU. Now you can only blame your own reflexes.* |
-| **46–60** | 🚗 | **Honest Daily Driver** | *Reliable workhorse. Won't break records, won't break a sweat. Perfectly balanced.* |
-| **31–45** | 🚲 | **Budget Warrior** | *Proud veteran silicon. Smooth in 720p, doubles as a space heater on 1080p60.* |
-| **16–30** | 📻 | **Study Mode Only** | *Fans are quiet as long as you only open LibreOffice and htop. Don't push your luck.* |
-| **0–15** | 🥔 | **Potato Toaster** | *You installed Arch on a microwave. The cooling fans are screaming for mercy.* |
-
----
-
-## 🔒 Security & Marketplace Hardening
-
-Adheres strictly to the **Omarchy Marketplace Security Baseline**:
-
-1. **No QML Markup Injection**: Every `Text` element in `Panel.qml` explicitly sets `textFormat: Text.PlainText`.
-2. **Safe IPC & Process Execution**: All CLI calls use explicit argument arrays (`command: ["omarank-engine", "--json"]`), completely eliminating shell injection vectors.
-3. **Bounded Buffers**: `StdioCollector` output is strictly bounded to 64 KiB (`65536` bytes).
-4. **Process Lifecycle Safety**: Uses bounded timeout timers (`launchDeadlineTimer: 5000ms`) and terminates all child processes upon `Component.onDestruction`.
-5. **No `/tmp` Path Traversal**: Local opt-in state is saved to `$XDG_STATE_HOME/omarank/survey_state.json` with secure `0600` file permissions.
+| OmaScore | Rank Tier | Assessment |
+| :---: | :--- | :--- |
+| **96-100** | **Cosmic Reality Simulator** | Peak silicon performance and workstation computing power. |
+| **89-95** | **NASA Supercomputer** | Extreme enthusiast hardware with exceptional multi-threaded throughput. |
+| **76-88** | **Cyberpunk Beast** | High-refresh rate displays combined with modern high-tier silicon. |
+| **61-75** | **Gaming Rig** | High refresh rates and capable dedicated graphics for modern workloads. |
+| **46-60** | **Honest Daily Driver** | Reliable, well-balanced workhorse configuration. |
+| **31-45** | **Budget Warrior** | Capable hardware suitable for standard computing and light workloads. |
+| **16-30** | **Study Mode Only** | Functional configuration for text editing, terminals, and light browsing. |
+| **0-15** | **Minimal Hardware** | Ultra-constrained legacy hardware. |
 
 ---
 
-## 📦 Installation
+## Requirements
 
-Standard Omarchy plugin installation:
+- cargo and rustc (Rust toolchain, for building from source)
+- inxi and lspci (for detailed hardware identification)
 
+---
+
+## Installation and Setup
+
+### Why Building from Source is Required
+Under the Omarchy Linux Security Standards (AGENTS.md Rule 5.3), precompiled binaries are strictly forbidden from Git repositories to guarantee user system integrity. Therefore, the native engine must be compiled from source on your local machine after adding the plugin.
+
+### Step 1: Add the Plugin to Omarchy
 ```bash
-omarchy plugin add https://github.com/ozdil/omarchy-omarank --enable
+omarchy plugin add https://github.com/ozdil/omarchy-omarank.git
 ```
 
-To update an existing installation:
-
+### Step 2: Build the Native Engine
+Navigate to the plugin directory and compile the engine:
 ```bash
-omarchy plugin update ozdil.omarank
+cd ~/.config/omarchy/plugins/ozdil.omarank
+cargo build --release --locked
+install -m 755 target/release/omarank-engine ./omarank-engine
 ```
 
-To remove:
+### Step 3: Add to Omarchy Shell Configuration
+Add `ozdil.omarank` to `bar.layout.right` in `~/.config/omarchy/shell.json`:
+```json
+{
+  "id": "ozdil.omarank"
+}
+```
 
+### Step 4: Restart Shell
 ```bash
-omarchy plugin drop ozdil.omarank
+omarchy-restart-shell
 ```
 
 ---
 
-## 💻 CLI Usage
+## CLI Usage
 
 The standalone engine can be run directly from any terminal:
 
 ```bash
-# Display rich ANSI hardware score card
+# Display formatted hardware score card
 omarank-engine
 
 # View full tier ladder
 omarank-engine --ladder
 
-# Output machine-readable JSON (for scripts/polybar/waybar)
+# Output machine-readable JSON for integration
 omarank-engine --json
 
 # Submit anonymous hardware profile to OmaStat survey
@@ -106,6 +107,17 @@ omarank-engine --submit-survey
 
 ---
 
-## 📄 License
+## Security and Architecture Standards
 
-Distributed under the [MIT License](LICENSE). Copyright © 2026 Ozan Özdil (ozdil).
+OmaRank complies strictly with the Omarchy Linux Security Standards (AGENTS.md):
+- Plain Text UI: Every text element in `Panel.qml` explicitly sets `textFormat: Text.PlainText` to eliminate injection vulnerabilities.
+- Safe IPC Execution: All CLI calls use explicit argument arrays, eliminating shell injection vectors.
+- Bounded Buffers: Process output streams are strictly bounded to 64 KiB limits.
+- Process Lifecycle Safety: Employs bounded timeout timers and terminates all child processes upon component destruction.
+- Secure File Permissions: State files are saved to `$XDG_STATE_HOME/omarank/` with secure POSIX mode 0600 file permissions.
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
