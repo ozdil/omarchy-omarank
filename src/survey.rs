@@ -300,25 +300,49 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
         Err(e) => return (false, format!("JSON serialization error: {}", e)),
     };
 
-    let endpoint = "https://omastat.omarchy.org/api/survey/v1";
-    let deadline = Instant::now() + Duration::from_secs(4);
+    let official_endpoint = "https://omastat.omarchy.org/api/survey/v1";
+    let community_endpoint = "https://omastat.ozan-zdil.workers.dev/api/survey/v1";
 
-    let output = crate::subproc::run_cmd_bounded(
+    let primary_deadline = Instant::now() + Duration::from_secs(3);
+
+    // 1. Try official endpoint first
+    let mut output = crate::subproc::run_cmd_bounded(
         "/usr/bin/curl",
         &[
             "-s",
             "-S",
-            "--max-time", "3",
+            "--max-time", "2",
             "-X", "POST",
             "-H", "Content-Type: application/json",
             "-H", "User-Agent: OmaRank-Engine/1.0",
             "-d", &json_data,
-            endpoint,
+            official_endpoint,
         ],
         &[],
-        deadline,
+        primary_deadline,
         4096,
     );
+
+    // 2. Fallback to live community deployment if official domain is not yet routed
+    if output.is_none() {
+        let fallback_deadline = Instant::now() + Duration::from_secs(4);
+        output = crate::subproc::run_cmd_bounded(
+            "/usr/bin/curl",
+            &[
+                "-s",
+                "-S",
+                "--max-time", "3",
+                "-X", "POST",
+                "-H", "Content-Type: application/json",
+                "-H", "User-Agent: OmaRank-Engine/1.0",
+                "-d", &json_data,
+                community_endpoint,
+            ],
+            &[],
+            fallback_deadline,
+            4096,
+        );
+    }
 
     let mut state = load_survey_state();
     state.has_opted_in = true;
