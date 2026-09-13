@@ -506,7 +506,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
             width: idRow.implicitWidth + Style.space(12)
-            radius: Style.radius(4)
+            radius: Style.space(4)
             color: idMouse.containsMouse
               ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
               : "transparent"
@@ -583,7 +583,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
             width: archRow.implicitWidth + Style.space(12)
-            radius: Style.radius(4)
+            radius: Style.space(4)
             color: archMouse.containsMouse
               ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
               : "transparent"
