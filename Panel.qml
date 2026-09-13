@@ -75,12 +75,20 @@ Panel {
 
   property string copyToastMsg: ""
 
-  function copyToClipboard(val) {
+  function copyToClipboard(val, customMsg) {
     if (!val) return
     copyProc.command = ["wl-copy", String(val)]
     copyProc.running = true
-    root.copyToastMsg = "Copied spec to clipboard"
+    root.copyToastMsg = customMsg ? String(customMsg) : "Copied spec to clipboard"
     copyToastTimer.restart()
+  }
+
+  function openWebLeaderboard() {
+    root.close()
+    var url = "https://omastat.ozan-zdil.workers.dev/dashboard#tab-leaderboard?my=" + encodeURIComponent(root.archetypeSignature)
+    launchProc.command = ["xdg-open", url]
+    launchDeadlineTimer.restart()
+    launchProc.running = true
   }
 
   function launchDashboard() {
@@ -486,34 +494,77 @@ Panel {
           }
         }
 
-        // Battlestation ID & Archetype Sub-Row
+        // Battlestation ID & Archetype Sub-Row with Interactive Copiers
         Item {
           width: parent.width
-          implicitHeight: Style.space(18)
+          implicitHeight: Style.space(22)
 
-          RowLayout {
+          // Left: Battlestation ID Copier
+          Rectangle {
+            id: idCopyBtn
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(4)
+            height: Style.space(20)
+            width: idRow.implicitWidth + Style.space(12)
+            radius: Style.radius(4)
+            color: idMouse.containsMouse
+              ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
+              : "transparent"
+            border.color: idMouse.containsMouse
+              ? (Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground))
+              : "transparent"
+            border.width: 1
 
-            Text {
-              textFormat: Text.PlainText
-              text: "󰌽"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-              color: root.bar ? root.bar.foreground : Color.foreground
-              opacity: 0.4
+            RowLayout {
+              id: idRow
+              anchors.centerIn: parent
+              spacing: Style.space(4)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "󰌽"
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: root.bar ? root.bar.foreground : Color.foreground
+                opacity: idMouse.containsMouse ? 0.9 : 0.4
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "ID: " + root.battlestationId
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: root.bar ? root.bar.foreground : Color.foreground
+                opacity: idMouse.containsMouse ? 1.0 : 0.6
+                font.bold: idMouse.containsMouse
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "󰆏"
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+                opacity: idMouse.containsMouse ? 1.0 : 0.4
+              }
             }
-            Text {
-              textFormat: Text.PlainText
-              text: "ID: " + root.battlestationId
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-              color: root.bar ? root.bar.foreground : Color.foreground
-              opacity: 0.6
+
+            MouseArea {
+              id: idMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.copyToClipboard(root.battlestationId, "ID Kopyalandı: " + root.battlestationId)
+            }
+
+            PanelToolTip {
+              visible: idMouse.containsMouse && root.copyToastMsg.length === 0
+              text: "ID Kopyala: " + root.battlestationId
+              fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
             }
           }
 
+          // Center: Copied Toast Indicator
           Text {
             visible: root.copyToastMsg.length > 0
             textFormat: Text.PlainText
@@ -525,26 +576,68 @@ Panel {
             anchors.centerIn: parent
           }
 
-          RowLayout {
+          // Right: Archetype Signature Copier
+          Rectangle {
+            id: archCopyBtn
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(4)
+            height: Style.space(20)
+            width: archRow.implicitWidth + Style.space(12)
+            radius: Style.radius(4)
+            color: archMouse.containsMouse
+              ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
+              : "transparent"
+            border.color: archMouse.containsMouse
+              ? (Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground))
+              : "transparent"
+            border.width: 1
 
-            Text {
-              textFormat: Text.PlainText
-              text: "󰚥"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-              color: root.bar ? root.bar.foreground : Color.foreground
-              opacity: 0.4
+            RowLayout {
+              id: archRow
+              anchors.centerIn: parent
+              spacing: Style.space(4)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "󰚥"
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: root.bar ? root.bar.foreground : Color.foreground
+                opacity: archMouse.containsMouse ? 0.9 : 0.4
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.archetypeSignature
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: root.bar ? root.bar.foreground : Color.foreground
+                opacity: archMouse.containsMouse ? 1.0 : 0.6
+                font.bold: archMouse.containsMouse
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "󰆏"
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+                opacity: archMouse.containsMouse ? 1.0 : 0.4
+              }
             }
-            Text {
-              textFormat: Text.PlainText
-              text: root.archetypeSignature
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-              color: root.bar ? root.bar.foreground : Color.foreground
-              opacity: 0.6
+
+            MouseArea {
+              id: archMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.copyToClipboard(root.archetypeSignature, "Arketip Kopyalandı: " + root.archetypeSignature)
+            }
+
+            PanelToolTip {
+              visible: archMouse.containsMouse && root.copyToastMsg.length === 0
+              text: "Arketipi Kopyala: " + root.archetypeSignature
+              fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
             }
           }
         }
@@ -745,6 +838,18 @@ Panel {
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: root.launchDashboard()
+        }
+
+        Button {
+          width: parent.width
+          bordered: true
+          text: "Dünya Sıralamasında Gör 󰄵"
+          fontSize: Style.font.bodySmall
+          foreground: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          horizontalPadding: Style.spacing.controlPaddingX
+          verticalPadding: Style.spacing.controlPaddingY
+          onClicked: root.openWebLeaderboard()
         }
       }
     }
