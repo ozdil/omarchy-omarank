@@ -851,6 +851,18 @@ Panel {
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: root.openWebLeaderboard()
         }
+
+        Button {
+          width: parent.width
+          bordered: true
+          text: "☕ Geliştiriciye Destek Ol"
+          fontSize: Style.font.bodySmall
+          foreground: "#FFDD00"
+          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          horizontalPadding: Style.spacing.controlPaddingX
+          verticalPadding: Style.spacing.controlPaddingY
+          onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
+        }
       }
     }
   }

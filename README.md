@@ -1,5 +1,7 @@
 # OmaRank - Hardware Benchmarking and Tier Ranking for Omarchy Linux
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ozdil)
+
 Hardware benchmarking and tier-ranking plugin for the Omarchy desktop environment.
 
 Author: Ozan Ozdil (ozdil)  
@@ -115,6 +117,14 @@ OmaRank complies strictly with the Omarchy Linux Security Standards (AGENTS.md):
 - Bounded Buffers: Process output streams are strictly bounded to 64 KiB limits.
 - Process Lifecycle Safety: Employs bounded timeout timers and terminates all child processes upon component destruction.
 - Secure File Permissions: State files are saved to `$XDG_STATE_HOME/omarank/` with secure POSIX mode 0600 file permissions.
+
+---
+
+## Support & Sponsorship
+
+If you find OmaRank useful and want to support independent Linux development:
+
+<a href="https://buymeacoffee.com/ozdil" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 50px !important;width: 180px !important;" ></a>
 
 ---
 
