@@ -42,6 +42,7 @@ Panel {
   property string osDesc: "Omarchy Linux"
   property string battlestationId: "OMA-????"
   property string archetypeSignature: "OMA-BUILD"
+  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font")
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
@@ -299,7 +300,7 @@ Panel {
           textFormat: Text.PlainText
           text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
           color: root.bar ? root.bar.foreground : Color.foreground
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.family: root.fontFamily
           font.pixelSize: Style.font.display
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
@@ -316,7 +317,7 @@ Panel {
             iconText: "󰑐"
             tooltipText: "Re-check specs"
             foreground: root.bar ? root.bar.foreground : Color.foreground
-            fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+            fontFamily: root.fontFamily
             iconSize: Style.font.subtitle * 1.3
             horizontalPadding: Style.space(5)
             verticalPadding: Style.space(2)
@@ -329,7 +330,7 @@ Panel {
             iconText: "󰍹"
             tooltipText: "Open Terminal Dashboard"
             foreground: root.bar ? root.bar.foreground : Color.foreground
-            fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+            fontFamily: root.fontFamily
             iconSize: Style.font.subtitle * 1.3
             horizontalPadding: Style.space(5)
             verticalPadding: Style.space(2)
@@ -353,7 +354,7 @@ Panel {
             width: parent.width
             text: root.tierName
             color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
             elide: Text.ElideRight
@@ -365,7 +366,7 @@ Panel {
             width: parent.width
             text: (root.globalRank > 0 ? ("WORLD RANK #" + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
             font.letterSpacing: 1.2
@@ -390,7 +391,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󰍛"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -408,7 +409,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󰢮"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -426,7 +427,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󰘚"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -444,7 +445,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󰋊"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -462,7 +463,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󰌢"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -480,7 +481,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "󱤓"
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               color: root.bar ? root.bar.foreground : Color.foreground
               opacity: 0.5
@@ -523,7 +524,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "󰌽"
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: root.bar ? root.bar.foreground : Color.foreground
                 opacity: idMouse.containsMouse ? 0.9 : 0.4
@@ -532,7 +533,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "ID: " + root.battlestationId
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: root.bar ? root.bar.foreground : Color.foreground
                 opacity: idMouse.containsMouse ? 1.0 : 0.6
@@ -542,7 +543,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "󰆏"
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
                 opacity: idMouse.containsMouse ? 1.0 : 0.4
@@ -560,7 +561,7 @@ Panel {
             PanelToolTip {
               visible: idMouse.containsMouse && root.copyToastMsg.length === 0
               text: "ID Kopyala: " + root.battlestationId
-              fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+              fontFamily: root.fontFamily
             }
           }
 
@@ -569,7 +570,7 @@ Panel {
             visible: root.copyToastMsg.length > 0
             textFormat: Text.PlainText
             text: root.copyToastMsg
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
             color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
@@ -600,7 +601,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "󰚥"
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: root.bar ? root.bar.foreground : Color.foreground
                 opacity: archMouse.containsMouse ? 0.9 : 0.4
@@ -609,7 +610,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: root.archetypeSignature
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: root.bar ? root.bar.foreground : Color.foreground
                 opacity: archMouse.containsMouse ? 1.0 : 0.6
@@ -619,7 +620,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "󰆏"
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
                 opacity: archMouse.containsMouse ? 1.0 : 0.4
@@ -637,7 +638,7 @@ Panel {
             PanelToolTip {
               visible: archMouse.containsMouse && root.copyToastMsg.length === 0
               text: "Arketipi Kopyala: " + root.archetypeSignature
-              fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+              fontFamily: root.fontFamily
             }
           }
         }
@@ -656,7 +657,7 @@ Panel {
         PanelSectionHeader {
           text: "SUB-SCORES BREAKDOWN"
           foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
         }
 
         Row {
@@ -718,7 +719,7 @@ Panel {
         PanelSectionHeader {
           text: "SYSTEM VERDICT"
           foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
         }
 
         BorderSurface {
@@ -743,7 +744,7 @@ Panel {
               textFormat: Text.PlainText
               text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
               color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.title
               Layout.alignment: Qt.AlignVCenter
             }
@@ -758,7 +759,7 @@ Panel {
                   textFormat: Text.PlainText
                   text: root.tierName
                   color: root.bar ? root.bar.foreground : Color.foreground
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
                   font.bold: true
                 }
@@ -767,7 +768,7 @@ Panel {
                   textFormat: Text.PlainText
                   text: "• " + root.percentileText
                   color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
               }
@@ -776,7 +777,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "“" + root.tierQuote + "”"
                 color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap
                 width: parent.width
@@ -787,7 +788,7 @@ Panel {
               textFormat: Text.PlainText
               text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " pts"
               color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               font.bold: true
               Layout.alignment: Qt.AlignVCenter
@@ -812,7 +813,7 @@ Panel {
           text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
           fontSize: Style.font.bodySmall
           foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           enabled: !root.isSubmittingSurvey
@@ -834,7 +835,7 @@ Panel {
           text: "Open Terminal Benchmark & Ladder"
           fontSize: Style.font.bodySmall
           foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: root.launchDashboard()
@@ -846,7 +847,7 @@ Panel {
           text: "Dünya Sıralamasında Gör 󰄵"
           fontSize: Style.font.bodySmall
           foreground: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: root.openWebLeaderboard()
@@ -858,7 +859,7 @@ Panel {
           text: "☕ Geliştiriciye Destek Ol"
           fontSize: Style.font.bodySmall
           foreground: "#FFDD00"
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
@@ -877,7 +878,7 @@ Panel {
     tooltipText: tooltip
     fontSize: Style.font.bodySmall
     foreground: root.bar ? root.bar.foreground : Color.foreground
-    fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+    fontFamily: root.fontFamily
     horizontalPadding: Style.space(4)
     verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
     bordered: true
@@ -888,7 +889,7 @@ Panel {
     textFormat: Text.PlainText
     color: root.bar ? root.bar.foreground : Color.foreground
     opacity: 0.6
-    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+    font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
   }
 
@@ -896,7 +897,7 @@ Panel {
   component InfoValue: Text {
     textFormat: Text.PlainText
     color: root.bar ? root.bar.foreground : Color.foreground
-    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+    font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
   }
 
@@ -921,7 +922,7 @@ Panel {
     PanelToolTip {
       visible: valueMouse.enabled && valueMouse.containsMouse
       text: tooltipText
-      fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+      fontFamily: root.fontFamily
     }
   }
 }
