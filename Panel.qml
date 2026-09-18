@@ -42,7 +42,7 @@ Panel {
   property string osDesc: "Omarchy Linux"
   property string battlestationId: "OMA-????"
   property string archetypeSignature: "OMA-BUILD"
-  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font")
+  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
