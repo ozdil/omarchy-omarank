@@ -1,19 +1,63 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Immediate rejection of loader injection
+if [ -n "${LD_PRELOAD:-}" ] || [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    echo "Security Error: Prohibited loader control variable detected" >&2
+    exit 1
+fi
+
+# Re-exec through fixed trusted shell under sanitized environment (/usr/bin/env -i)
+if [ "${OMARANK_SECURE_ENV:-0}" != "1" ]; then
+    exec /usr/bin/env -i \
+        PATH="/usr/bin:/bin:${HOME}/.local/bin:${HOME}/.cargo/bin" \
+        HOME="${HOME}" \
+        USER="${USER:-$(/usr/bin/id -un 2>/dev/null || echo "user")}" \
+        LANG="${LANG:-C.UTF-8}" \
+        LC_ALL="${LC_ALL:-C.UTF-8}" \
+        XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(/usr/bin/id -u 2>/dev/null || echo 1000)}" \
+        XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}" \
+        XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}" \
+        OMARANK_SECURE_ENV=1 \
+        /bin/bash -p "$0" "$@"
+fi
+
+# Reject unexpected build and loader controls before building or launching
+for var in LD_PRELOAD LD_LIBRARY_PATH RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_HOME BASH_ENV ENV; do
+    if [ -n "${!var+x}" ]; then
+        echo "Security Error: Prohibited build/loader control variable detected: ${var}" >&2
+        exit 1
+    fi
+done
+
+DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
 BIN="${DIR}/omarank-engine"
 
-if [[ ! -x "${BIN}" ]]; then
-    if command -v omarank-engine >/dev/null 2>&1; then
-        BIN="$(command -v omarank-engine)"
-    elif [[ -f "${DIR}/Cargo.toml" ]] && command -v cargo >/dev/null 2>&1; then
-        (cd "${DIR}" && cargo build --release --quiet && cp "target/release/omarank-engine" "${BIN}" && chmod +x "${BIN}") >/dev/null 2>&1 || true
+# Resolve trusted cargo binary
+CARGO_BIN=""
+if [[ -x /usr/bin/cargo ]]; then
+    CARGO_BIN="/usr/bin/cargo"
+elif [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
+    CARGO_BIN="${HOME}/.cargo/bin/cargo"
+fi
+
+if [[ ! -x "${BIN}" ]] && [[ -f "${DIR}/Cargo.toml" ]]; then
+    if [[ -n "${CARGO_BIN}" ]]; then
+        TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omarank-build.XXXXXX)"
+        cleanup() {
+            /usr/bin/rm -rf "${TMP_BUILD_DIR}"
+        }
+        trap cleanup EXIT
+        if (cd "${DIR}" && "${CARGO_BIN}" build --release --locked --quiet --target-dir "${TMP_BUILD_DIR}") >/dev/null 2>&1; then
+            /usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omarank-engine" "${BIN}" >/dev/null 2>&1 || true
+        fi
     fi
 fi
 
 if [[ -x "${BIN}" ]]; then
     exec "${BIN}" --status
+elif [[ -x "${HOME}/.local/bin/omarank-engine" ]]; then
+    exec "${HOME}/.local/bin/omarank-engine" --status
 else
-    echo '{"text":" OmaRank","tooltip":"OmaRank engine binary not found"}'
+    echo '{"text":"OMARANK: OFFLINE","tooltip":"Engine binary not found (run cargo build --release --locked)","class":"alert"}'
 fi

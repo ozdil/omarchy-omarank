@@ -1,41 +1,115 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 
+# Immediate rejection of loader injection
+if [ -n "${LD_PRELOAD:-}" ] || [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    echo "Security Error: Prohibited loader control variable detected" >&2
+    exit 1
+fi
+
+# Re-exec through fixed trusted shell under sanitized environment (/usr/bin/env -i)
+if [ "${OMARANK_SECURE_ENV:-0}" != "1" ]; then
+    exec /usr/bin/env -i \
+        PATH="/usr/bin:/bin:${HOME}/.local/bin:${HOME}/.cargo/bin" \
+        HOME="${HOME}" \
+        USER="${USER:-$(/usr/bin/id -un 2>/dev/null || echo "user")}" \
+        LANG="${LANG:-C.UTF-8}" \
+        LC_ALL="${LC_ALL:-C.UTF-8}" \
+        DISPLAY="${DISPLAY:-}" \
+        WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+        XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(/usr/bin/id -u 2>/dev/null || echo 1000)}" \
+        XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}" \
+        XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}" \
+        OMARANK_SECURE_ENV=1 \
+        /bin/bash -p "$0" "$@"
+fi
+
+# Reject unexpected build and loader controls before building or launching
+for var in LD_PRELOAD LD_LIBRARY_PATH RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_HOME BASH_ENV ENV; do
+    if [ -n "${!var+x}" ]; then
+        echo "Security Error: Prohibited build/loader control variable detected: ${var}" >&2
+        exit 1
+    fi
+done
+
+# Resolve trusted quickshell binary
+QUICKSHELL_BIN=""
+if [[ -x /usr/bin/quickshell ]]; then
+    QUICKSHELL_BIN="/usr/bin/quickshell"
+elif [[ -x /usr/local/bin/quickshell ]]; then
+    QUICKSHELL_BIN="/usr/local/bin/quickshell"
+elif [[ -x "${HOME}/.local/bin/quickshell" ]]; then
+    QUICKSHELL_BIN="${HOME}/.local/bin/quickshell"
+fi
+
 # Prefer native Quickshell UI if available
-if [[ "${1:-}" != "--cli" ]] && command -v quickshell >/dev/null 2>&1; then
-    if quickshell ipc -p /usr/share/omarchy/shell call ozdil.omarank toggle >/dev/null 2>&1; then
+if [[ "${1:-}" != "--cli" && -n "${QUICKSHELL_BIN}" ]]; then
+    if "${QUICKSHELL_BIN}" ipc -p /usr/share/omarchy/shell call ozdil.omarank toggle >/dev/null 2>&1; then
         exit 0
     fi
 fi
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == "--cli" ]]; then
+    shift
+fi
+
+DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
 BIN="${DIR}/omarank-engine"
 
-if [[ ! -x "${BIN}" ]]; then
-    if command -v omarank-engine >/dev/null 2>&1; then
-        BIN="$(command -v omarank-engine)"
-    elif [[ -f "${DIR}/Cargo.toml" ]] && command -v cargo >/dev/null 2>&1; then
-        echo "Building omarank-engine from source..."
-        (cd "${DIR}" && cargo build --release --quiet && cp "target/release/omarank-engine" "${BIN}" && chmod +x "${BIN}") || true
+# Resolve trusted cargo binary
+CARGO_BIN=""
+if [[ -x /usr/bin/cargo ]]; then
+    CARGO_BIN="/usr/bin/cargo"
+elif [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
+    CARGO_BIN="${HOME}/.cargo/bin/cargo"
+fi
+
+if [[ ! -x "${BIN}" ]] && [[ -f "${DIR}/Cargo.toml" ]]; then
+    if [[ -n "${CARGO_BIN}" ]]; then
+        echo "Building omarank-engine from source..." >&2
+        TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omarank-build.XXXXXX)"
+        cleanup() {
+            /usr/bin/rm -rf "${TMP_BUILD_DIR}"
+        }
+        trap cleanup EXIT
+        if (cd "${DIR}" && "${CARGO_BIN}" build --release --locked --target-dir "${TMP_BUILD_DIR}") >&2; then
+            /usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omarank-engine" "${BIN}" >&2 || true
+        fi
     fi
 fi
 
-if [[ ! -x "${BIN}" ]]; then
-    echo "Error: omarank-engine binary not found. Please run 'cargo build --release' in ${DIR}"
-    exit 1
-fi
-
-clear
-"${BIN}"
-echo ""
-"${BIN}" --ladder
-echo ""
-echo -e "\x1b[1;36mPress [S] to submit anonymous survey to OmaStat, or [Q] to quit:\x1b[0m"
-read -r -n 1 -s key || true
-echo ""
-if [[ "${key:-}" == "s" || "${key:-}" == "S" ]]; then
-    "${BIN}" --submit-survey
+if [[ -x "${BIN}" ]]; then
+    /usr/bin/clear 2>/dev/null || true
+    "${BIN}" "$@"
     echo ""
-    echo -e "\x1b[1;32mDone! Press Enter to exit.\x1b[0m"
-    read -r || true
+    "${BIN}" --ladder
+    echo ""
+    printf "\033[1;36mPress [S] to submit anonymous survey to OmaStat, or [Q] to quit:\033[0m\n"
+    read -r -n 1 -s key || true
+    echo ""
+    if [[ "${key:-}" == "s" || "${key:-}" == "S" ]]; then
+        "${BIN}" --submit-survey
+        echo ""
+        printf "\033[1;32mDone! Press Enter to exit.\033[0m\n"
+        read -r || true
+    fi
+elif [[ -x "${HOME}/.local/bin/omarank-engine" ]]; then
+    LOCAL_BIN="${HOME}/.local/bin/omarank-engine"
+    /usr/bin/clear 2>/dev/null || true
+    "${LOCAL_BIN}" "$@"
+    echo ""
+    "${LOCAL_BIN}" --ladder
+    echo ""
+    printf "\033[1;36mPress [S] to submit anonymous survey to OmaStat, or [Q] to quit:\033[0m\n"
+    read -r -n 1 -s key || true
+    echo ""
+    if [[ "${key:-}" == "s" || "${key:-}" == "S" ]]; then
+        "${LOCAL_BIN}" --submit-survey
+        echo ""
+        printf "\033[1;32mDone! Press Enter to exit.\033[0m\n"
+        read -r || true
+    fi
+else
+    echo "Error: omarank-engine binary not found. Please run 'cargo build --release --locked' in ${DIR}" >&2
+    exit 1
 fi
