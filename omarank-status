@@ -32,6 +32,7 @@ done
 
 DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
 BIN="${DIR}/omarank-engine"
+STAMP="${DIR}/.engine-provenance"
 
 # Resolve trusted cargo binary
 CARGO_BIN=""
@@ -41,23 +42,47 @@ elif [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
     CARGO_BIN="${HOME}/.cargo/bin/cargo"
 fi
 
-if [[ ! -x "${BIN}" ]] && [[ -f "${DIR}/Cargo.toml" ]]; then
-    if [[ -n "${CARGO_BIN}" ]]; then
-        TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omarank-build.XXXXXX)"
-        cleanup() {
-            /usr/bin/rm -rf "${TMP_BUILD_DIR}"
-        }
-        trap cleanup EXIT
-        if (cd "${DIR}" && "${CARGO_BIN}" build --release --locked --quiet --target-dir "${TMP_BUILD_DIR}") >/dev/null 2>&1; then
-            /usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omarank-engine" "${BIN}" >/dev/null 2>&1 || true
+# Calculate expected provenance hash from current immutable source/lock state
+SOURCE_HASH=""
+if [[ -f "${DIR}/Cargo.lock" && -f "${DIR}/Cargo.toml" ]]; then
+    SOURCE_HASH="$(/usr/bin/sha256sum "${DIR}/Cargo.lock" "${DIR}/Cargo.toml" | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fi
+
+NEEDS_BUILD=1
+if [[ -x "${BIN}" && -n "${SOURCE_HASH}" && -f "${STAMP}" ]]; then
+    STORED_HASH="$(/usr/bin/cat "${STAMP}" 2>/dev/null || true)"
+    if [[ "${STORED_HASH}" == "${SOURCE_HASH}" ]]; then
+        NEEDS_BUILD=0
+    fi
+fi
+
+if [[ "${NEEDS_BUILD}" -eq 1 && -n "${CARGO_BIN}" && -f "${DIR}/Cargo.toml" ]]; then
+    TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omarank-build.XXXXXX)"
+    cleanup() {
+        /usr/bin/rm -rf "${TMP_BUILD_DIR}"
+    }
+    trap cleanup EXIT
+    if (cd "${DIR}" && "${CARGO_BIN}" build --release --locked --quiet --target-dir "${TMP_BUILD_DIR}") >/dev/null 2>&1; then
+        if /usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omarank-engine" "${BIN}" >/dev/null 2>&1; then
+            if [[ -n "${SOURCE_HASH}" ]]; then
+                echo "${SOURCE_HASH}" > "${STAMP}" 2>/dev/null || true
+            fi
         fi
     fi
 fi
 
 if [[ -x "${BIN}" ]]; then
+    # Verify provenance before executing if stamp exists and hash is computed
+    if [[ -n "${SOURCE_HASH}" && -f "${STAMP}" ]]; then
+        STORED_HASH="$(/usr/bin/cat "${STAMP}" 2>/dev/null || true)"
+        if [[ "${STORED_HASH}" != "${SOURCE_HASH}" ]]; then
+            echo "Security Error: Engine binary provenance mismatch" >&2
+            exit 1
+        fi
+    fi
     exec "${BIN}" --status
-elif [[ -x "${HOME}/.local/bin/omarank-engine" ]]; then
-    exec "${HOME}/.local/bin/omarank-engine" --status
 else
-    echo '{"text":"OMARANK: OFFLINE","tooltip":"Engine binary not found (run cargo build --release --locked)","class":"alert"}'
+    echo '{"text":"OMARANK: OFFLINE","tooltip":"Engine binary not found or provenance invalid (run cargo build --release --locked)","class":"alert"}'
+    exit 1
 fi
+

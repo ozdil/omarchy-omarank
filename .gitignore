@@ -4,4 +4,7 @@ pkg/
 *.log
 .DS_Store
 omarank-engine
+.engine-provenance
+.engine-build.lock
 *.tmp_*
+
