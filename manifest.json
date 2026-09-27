@@ -6,7 +6,9 @@
   "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
   "description": "Hardware benchmark, witty tier ranking, and OmaStat community survey widget for Omarchy.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "activation": "on-demand",
   "entryPoints": {
     "barWidget": "Panel.qml"
@@ -16,7 +18,15 @@
     "description": "Hardware benchmark, witty tier ranking, and OmaStat survey hub.",
     "category": "System",
     "defaultSection": "right",
-    "aliases": ["omarank", "benchmark", "hardware", "score", "omastat", "rank"],
+    "aliases": [
+      "omarank",
+      "benchmark",
+      "hardware",
+      "score",
+      "omastat",
+      "rank"
+    ],
     "allowMultiple": false
-  }
+  },
+  "verified": true
 }
