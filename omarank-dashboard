@@ -42,10 +42,14 @@ elif [[ -x "${HOME}/.local/bin/quickshell" ]]; then
     QUICKSHELL_BIN="${HOME}/.local/bin/quickshell"
 fi
 
-# Prefer native Quickshell UI if available
+# Prefer native Quickshell standalone UI if available
 if [[ "${1:-}" != "--cli" && -n "${QUICKSHELL_BIN}" ]]; then
-    if "${QUICKSHELL_BIN}" ipc -p /usr/share/omarchy/shell call ozdil.omarank toggle >/dev/null 2>&1; then
+    if "${QUICKSHELL_BIN}" ipc call ozdil.omarank toggle >/dev/null 2>&1; then
         exit 0
+    fi
+    QML_SHELL="${DIR}/qml/shell.qml"
+    if [[ -f "${QML_SHELL}" ]]; then
+        exec "${QUICKSHELL_BIN}" -p "${QML_SHELL}"
     fi
 fi
 

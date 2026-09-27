@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OmaRank
+GenericName=Silicon Benchmark & Hardware Telemetry
+Comment=Hardware benchmark, scoring, and battlestation radar for Omarchy Linux
+Exec=omarank-dashboard
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;HardwareSettings;Monitor;
+Keywords=benchmark;hardware;cpu;gpu;ram;rank;omarchy;

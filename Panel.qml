@@ -95,7 +95,7 @@ Panel {
   function launchDashboard() {
     root.close()
     var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
-    launchProc.command = ["omarchy-launch-floating-terminal-with-presentation", dashPath]
+    launchProc.command = [dashPath]
     launchDeadlineTimer.restart()
     launchProc.running = true
   }
@@ -856,9 +856,10 @@ Panel {
         Button {
           width: parent.width
           bordered: true
-          text: "☕ Geliştiriciye Destek Ol"
+          text: "Gelistiriciye Destek Ol"
+          iconText: "\uf0f4"
           fontSize: Style.font.bodySmall
-          foreground: "#FFDD00"
+          foreground: root.foreground ? root.foreground : (root.bar ? root.bar.foreground : Color.foreground)
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
