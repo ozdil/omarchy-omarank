@@ -555,12 +555,12 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.copyToClipboard(root.battlestationId, "ID Kopyalandı: " + root.battlestationId)
+              onClicked: root.copyToClipboard(root.battlestationId, "ID Copied: " + root.battlestationId)
             }
 
             PanelToolTip {
               visible: idMouse.containsMouse && root.copyToastMsg.length === 0
-              text: "ID Kopyala: " + root.battlestationId
+              text: "Copy ID: " + root.battlestationId
               fontFamily: root.fontFamily
             }
           }
@@ -632,12 +632,12 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.copyToClipboard(root.archetypeSignature, "Arketip Kopyalandı: " + root.archetypeSignature)
+              onClicked: root.copyToClipboard(root.archetypeSignature, "Archetype Copied: " + root.archetypeSignature)
             }
 
             PanelToolTip {
               visible: archMouse.containsMouse && root.copyToastMsg.length === 0
-              text: "Arketipi Kopyala: " + root.archetypeSignature
+              text: "Copy Archetype: " + root.archetypeSignature
               fontFamily: root.fontFamily
             }
           }
@@ -844,7 +844,7 @@ Panel {
         Button {
           width: parent.width
           bordered: true
-          text: "Dünya Sıralamasında Gör 󰄵"
+          text: "View Global Leaderboard 󰄵"
           fontSize: Style.font.bodySmall
           foreground: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
           fontFamily: root.fontFamily
