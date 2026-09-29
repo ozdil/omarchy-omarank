@@ -46,6 +46,7 @@ Panel {
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
+  property bool showAboutModal: false
 
   function rankNerdIconFor(score) {
     if (score >= 96) return "" // Trophy
@@ -280,15 +281,43 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
+    focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(520))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
-    Column {
-      id: column
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.top: parent.top
-      spacing: Style.space(12)
+    PanelKeyCatcher {
+      id: keyCatcher
+      anchors.fill: parent
+      onCloseRequested: {
+        if (root.showAboutModal) {
+          root.showAboutModal = false
+        } else {
+          root.close()
+        }
+      }
+      onTabRequested: function(direction) { root.switchPanel(direction) }
+      onTextKey: function(t) {
+        if (t === "r" || t === "R") {
+          if (!statusProc.running) statusProc.running = true
+        } else if (t === "a" || t === "A") {
+          root.showAboutModal = !root.showAboutModal
+        } else if (t === "c" || t === "C") {
+          root.copyShareableCard()
+        } else if (t === "s" || t === "S") {
+          root.submitSurvey()
+        } else if (t === "m" || t === "M") {
+          root.launchMissionCenter()
+        } else if (t === "b" || t === "B") {
+          root.launchBtop()
+        }
+      }
+
+      Column {
+        id: column
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        spacing: Style.space(12)
 
       // ---------- Hero Header (Matching Omarchy Network Panel) ----------
       Item {
@@ -311,6 +340,19 @@ Panel {
           spacing: Style.space(6)
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
+
+          Button {
+            id: aboutAction
+            iconText: "󰋽"
+            tooltipText: "About & Imprint"
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            iconSize: Style.font.subtitle * 1.3
+            horizontalPadding: Style.space(5)
+            verticalPadding: Style.space(2)
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: root.showAboutModal = !root.showAboutModal
+          }
 
           Button {
             id: refreshAction
@@ -856,16 +898,101 @@ Panel {
         Button {
           width: parent.width
           bordered: true
-          text: "Gelistiriciye Destek Ol"
-          iconText: "\uf0f4"
+          text: "About & Developer Info"
+          iconText: "󰋽"
           fontSize: Style.font.bodySmall
           foreground: root.foreground ? root.foreground : (root.bar ? root.bar.foreground : Color.foreground)
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
+          onClicked: root.showAboutModal = !root.showAboutModal
+        }
+      }
+    }
+
+    // About & Imprint Modal Overlay
+    Rectangle {
+      id: aboutOverlay
+      anchors.fill: parent
+      visible: root.showAboutModal
+      color: Qt.rgba(0.05, 0.05, 0.07, 0.96)
+      z: 99
+
+      MouseArea {
+        anchors.fill: parent
+        // Block underlying clicks
+      }
+
+      Column {
+        anchors.centerIn: parent
+        width: parent.width - Style.space(40)
+        spacing: Style.space(12)
+
+        Row {
+          width: parent.width
+          Item {
+            width: parent.width - closeAboutBtn.implicitWidth
+            implicitHeight: aboutTitleText.implicitHeight
+            Text {
+              id: aboutTitleText
+              text: "OmaRank"
+              color: root.bar ? root.bar.foreground : Color.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+          }
+
+          Button {
+            id: closeAboutBtn
+            text: "✕"
+            bordered: true
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            onClicked: root.showAboutModal = false
+          }
+        }
+
+        Text {
+          text: "Version: 1.1.0\nDeveloper: Ozan Ozdil (@ozdil)\nLicense: MIT\nSystem Silicon Performance, Hardware Benchmark & Rating Module"
+          color: root.bar ? root.bar.foreground : Color.foreground
+          opacity: 0.7
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          lineHeight: 1.3
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+        }
+
+        Button {
+          width: parent.width
+          text: "GitHub / Contact"
+          iconText: "󰊤"
+          bordered: true
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          accent: Color.accent
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          onClicked: Qt.openUrlExternally("https://github.com/ozdil")
+        }
+
+        Button {
+          width: parent.width
+          text: "Buy Me a Coffee"
+          iconText: "󰅖"
+          bordered: true
+          foreground: "#000000"
+          color: "#FFDD00"
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
           onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
         }
       }
+    }
     }
   }
 
