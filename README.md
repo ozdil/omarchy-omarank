@@ -4,6 +4,8 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ozdil)
 
+![OmaRank Preview](preview.png)
+
 Hardware benchmarking and tier-ranking plugin for the Omarchy desktop environment.
 
 Author: Ozan Ozdil (ozdil)  

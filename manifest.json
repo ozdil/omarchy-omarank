@@ -3,9 +3,9 @@
   "id": "ozdil.omarank",
   "name": "OmaRank",
   "version": "1.3.0",
-  "author": "Ozan \u00d6zdil (ozdil)",
+  "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
-  "description": "Hardware benchmark, witty tier ranking, and OmaStat community survey widget for Omarchy.",
+  "description": "Hardware benchmark suite, CPU/GPU telemetry, witty tier ranking, and OmaStat community survey hub for Omarchy Linux.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "OmaRank",
-    "description": "Hardware benchmark, witty tier ranking, and OmaStat survey hub.",
+    "description": "Hardware benchmark suite, witty tier ranking, and OmaStat telemetry hub.",
     "category": "System",
     "defaultSection": "right",
     "aliases": [
