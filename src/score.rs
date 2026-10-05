@@ -193,14 +193,16 @@ fn score_gpu(name: &str, driver: &str) -> u32 {
     let n = name.to_lowercase();
     let d = driver.to_lowercase();
 
-    // Top tier NVIDIA / AMD
-    if n.contains("4090") {
+    // Top tier NVIDIA / AMD Flagships (Next-Gen & Current Titans)
+    if n.contains("5090") {
         100
-    } else if n.contains("4080") || n.contains("7900 xtx") {
+    } else if n.contains("5080") || n.contains("4090") {
+        99
+    } else if n.contains("5070 ti") || n.contains("4080 super") || n.contains("4080") || n.contains("7900 xtx") {
         95
-    } else if n.contains("4070 ti") || n.contains("7900 xt") {
+    } else if n.contains("5070") || n.contains("4070 ti super") || n.contains("4070 ti") || n.contains("7900 xt") || n.contains("8800 xt") {
         90
-    } else if n.contains("4070") || n.contains("7800 xt") || n.contains("3090") || n.contains("6950") {
+    } else if n.contains("4070 super") || n.contains("4070") || n.contains("7800 xt") || n.contains("3090") || n.contains("6950") {
         86
     // Intel Battlemage discrete GPUs & mid-high GPUs
     } else if n.contains("b580") || n.contains("battlemage") || n.contains("4060 ti") || n.contains("7700 xt") || n.contains("3080") {
@@ -291,10 +293,10 @@ fn score_mobo(chipset: &str, mobo_name: &str) -> u32 {
     // Chipset tiers
     if c.contains("Z890") || c.contains("Z790") || c.contains("X870E") || c.contains("X670E") || c.contains("TRX40") || c.contains("WRX80") {
         s = 94.0;
-    } else if c.contains("B850") || c.contains("X870") || c.contains("B760") || c.contains("B650E") || c.contains("B650") || c.contains("Z690") || c.contains("X570") || c.contains("Z590") {
+    } else if c.contains("B850") || c.contains("X870") || c.contains("B760") || c.contains("B650E") || c.contains("B650") || c.contains("Z690") || c.contains("X570") || c.contains("Z590") || c.contains("ARROW LAKE") || c.contains("LUNAR LAKE") || c.contains("METEOR LAKE") || c.contains("STRIX POINT") {
         s = 86.0;
-    } else if c.contains("B660") || c.contains("B550") || c.contains("B450") || c.contains("H670") || c.contains("H770") || c.contains("A620") {
-        s = 76.0;
+    } else if c.contains("B660") || c.contains("B550") || c.contains("B450") || c.contains("H670") || c.contains("H770") || c.contains("A620") || c.contains("RAPTOR LAKE") || c.contains("ALDER LAKE") || c.contains("HAWK POINT") || c.contains("PHOENIX") {
+        s = 78.0;
     } else if c.contains("H610") || c.contains("H510") || c.contains("A520") || c.contains("A320") || c.contains("H410") || c.contains("H310") {
         s = 62.0;
     } else if c.contains("H81") || c.contains("H61") || c.contains("B75") || c.contains("G41") {
@@ -479,7 +481,13 @@ fn generate_archetype_signature(hw: &HardwareInfo) -> String {
         "CPU"
     };
 
-    let gpu_part = if hw.gpu_name.contains("RTX 4090") {
+    let gpu_part = if hw.gpu_name.contains("RTX 5090") {
+        "5090"
+    } else if hw.gpu_name.contains("RTX 5080") {
+        "5080"
+    } else if hw.gpu_name.contains("RTX 5070") {
+        "5070"
+    } else if hw.gpu_name.contains("RTX 4090") {
         "4090"
     } else if hw.gpu_name.contains("RTX 4080") {
         "4080"
@@ -487,6 +495,8 @@ fn generate_archetype_signature(hw: &HardwareInfo) -> String {
         "4070"
     } else if hw.gpu_name.contains("RTX 4060") {
         "4060"
+    } else if hw.gpu_name.contains("B580") || hw.gpu_name.contains("Battlemage") {
+        "B580"
     } else if hw.gpu_name.contains("Intel Arc") || hw.gpu_name.contains("Meteor Lake") {
         "ARC"
     } else if hw.gpu_name.contains("Radeon") {

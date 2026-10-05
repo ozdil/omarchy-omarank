@@ -323,9 +323,24 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
                     if let Some(c_idx) = rest.find(" Chipset") {
                         chipset = format!("Intel {}", &rest[..c_idx]);
                         break;
+                    } else if rest.contains("Meteor Lake") {
+                        chipset = "Intel Meteor Lake SoC".to_string();
+                        break;
+                    } else if rest.contains("Arrow Lake") {
+                        chipset = "Intel Arrow Lake SoC".to_string();
+                        break;
+                    } else if rest.contains("Lunar Lake") {
+                        chipset = "Intel Lunar Lake SoC".to_string();
+                        break;
+                    } else if rest.contains("Raptor Lake") {
+                        chipset = "Intel Raptor Lake PCH".to_string();
+                        break;
+                    } else if rest.contains("Alder Lake") {
+                        chipset = "Intel Alder Lake PCH".to_string();
+                        break;
                     }
                 } else if line.contains("AMD") {
-                    for pat in ["X870E", "X870", "X670E", "X670", "B850", "B650E", "B650", "A620", "X570", "B550", "B450"] {
+                    for pat in ["X870E", "X870", "X670E", "X670", "B850", "B650E", "B650", "A620", "X570", "B550", "B450", "Strix Point", "Hawk Point", "Phoenix"] {
                         if line.contains(pat) {
                             chipset = format!("AMD {}", pat);
                             break;

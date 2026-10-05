@@ -355,7 +355,7 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
     if output.is_some() {
         (true, "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string())
     } else {
-        (true, "✓ Profile saved locally (Awaiting OmaStat community server deployment)".to_string())
+        (true, "[OK] Profile saved locally (Awaiting OmaStat community server deployment)".to_string())
     }
 }
 

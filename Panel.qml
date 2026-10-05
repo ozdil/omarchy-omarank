@@ -51,7 +51,7 @@ Panel {
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omarank/manifest.json"
 
   property string pluginName: "OmaRank"
-  property string pluginVersion: "1.3.1"
+  property string pluginVersion: "1.3.2"
   property string pluginDescription: "Hardware benchmark suite, CPU/GPU telemetry, witty tier ranking, and OmaStat community survey hub for Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
@@ -109,7 +109,7 @@ Panel {
 
   function openWebLeaderboard() {
     root.close()
-    var url = "https://omastat.ozan-zdil.workers.dev/dashboard#tab-leaderboard?my=" + encodeURIComponent(root.archetypeSignature)
+    var url = "https://omastat.ozan-zdil.workers.dev/dashboard?my=" + encodeURIComponent(root.archetypeSignature) + "#leaderboard"
     launchProc.command = ["xdg-open", url]
     launchDeadlineTimer.restart()
     launchProc.running = true
