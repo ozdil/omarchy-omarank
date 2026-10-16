@@ -56,7 +56,7 @@ Panel {
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omarank/manifest.json"
 
   property string pluginName: "OmaRank"
-  property string pluginVersion: "1.3.2"
+  property string pluginVersion: "1.4.0"
   property string pluginDescription: "Hardware benchmark suite, CPU/GPU telemetry, witty tier ranking, and OmaStat community survey hub for Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
