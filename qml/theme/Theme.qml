@@ -39,18 +39,22 @@ QtObject {
     readonly property string monoFont: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
     readonly property string iconFont: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
 
-    // Themeable Monochrome Icons (Unicode Font Glyph Standard - Zero Emoji Policy)
+    // Themeable Monochrome Icons (Unicode Font Glyph Standard - Zero Emoji Policy).
+    // Material Design glyphs live above U+FFFF, so they are built with fromCodePoint;
+    // every glyph here exists in JetBrainsMono Nerd Font v3.
     readonly property string iconRocket: "\uf135"
-    readonly property string iconCpu: "\uf2db"
-    readonly property string iconGpu: "\uf108"
-    readonly property string iconMemory: "\uf538"
-    readonly property string iconStorage: "\uf0a0"
-    readonly property string iconDisplay: "\uf26c"
-    readonly property string iconMobo: "\uf2db"
+    readonly property string iconCpu: String.fromCodePoint(0xF0EE0)      // md-cpu_64_bit
+    readonly property string iconGpu: String.fromCodePoint(0xF08AE)      // md-expansion_card
+    readonly property string iconMemory: "\uefc5"                        // fa-memory (RAM stick)
+    readonly property string iconStorage: String.fromCodePoint(0xF02CA)  // md-harddisk
+    readonly property string iconDisplay: String.fromCodePoint(0xF0379)  // md-monitor
+    readonly property string iconMobo: String.fromCodePoint(0xF0697)     // md-developer_board
     readonly property string iconTrophy: "\uf091"
     readonly property string iconRefresh: "\uf021"
     readonly property string iconCopy: "\uf0c5"
     readonly property string iconCheck: "\uf00c"
+    readonly property string iconGlobe: String.fromCodePoint(0xF01E7)    // md-earth
+    readonly property string iconInfo: String.fromCodePoint(0xF02FC)     // md-information
 
     property string lastLoadedRaw: ""
 

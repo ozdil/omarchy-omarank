@@ -75,6 +75,11 @@ Panel {
     } catch(e) {}
   }
 
+  // Group digits with commas regardless of system locale (the UI is English)
+  function fmtInt(n) {
+    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  }
+
   function rankNerdIconFor(score) {
     if (score >= 96) return "" // Trophy
     if (score >= 89) return "󰓅" // Speedometer
@@ -190,8 +195,8 @@ Panel {
 
           if (root.globalRank > 0) {
             root.worldRankDesc = root.rankIsEstimate
-              ? ("~#" + root.globalRank.toLocaleString() + " (estimate)")
-              : ("#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString())
+              ? ("~#" + root.fmtInt(root.globalRank) + " of " + root.fmtInt(root.totalMachines) + " (estimate)")
+              : ("#" + root.fmtInt(root.globalRank) + " / " + root.fmtInt(root.totalMachines))
           }
 
           if (d.sub_scores) {
@@ -497,7 +502,7 @@ Panel {
             id: heroMeta
             textFormat: Text.PlainText
             width: parent.width
-            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.globalRank.toLocaleString() + " • ") : "") + (root.tierGrade ? ("GRADE " + root.tierGrade + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
+            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.fmtInt(root.globalRank) + " • ") : "") + (root.tierGrade ? ("GRADE " + root.tierGrade + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -820,8 +825,8 @@ Panel {
           }
 
           SubScorePill {
-            label: "MOBO " + root.moboScore
-            tooltip: "Motherboard Score: " + root.moboScore + "/100 (" + root.moboDesc + ")"
+            label: "DISK " + root.storageScore
+            tooltip: "Storage Score: " + root.storageScore + "/100 (" + root.storageDesc + ")"
             width: subScoresRow.cellWidth
           }
 
@@ -832,8 +837,8 @@ Panel {
           }
 
           SubScorePill {
-            label: "DISK " + root.storageScore
-            tooltip: "Storage Score: " + root.storageScore + "/100 (" + root.storageDesc + ")"
+            label: "MOBO " + root.moboScore
+            tooltip: "Motherboard Score: " + root.moboScore + "/100 (" + root.moboDesc + ")"
             width: subScoresRow.cellWidth
           }
         }
