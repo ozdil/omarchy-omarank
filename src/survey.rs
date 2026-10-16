@@ -110,12 +110,74 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
     }
 }
 
+/// Live community deployment first; the official domain is not routed yet.
+const DEFAULT_OMASTAT_BASES: [&str; 2] = [
+    "https://omastat.ozan-zdil.workers.dev",
+    "https://omastat.omarchy.org",
+];
+
+/// Validates an `OMASTAT_URL` override: HTTPS anywhere, plain HTTP only to the loopback host.
+fn parse_omastat_override(raw: &str) -> Option<String> {
+    let url = raw.trim().trim_end_matches('/');
+    if url.is_empty() || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return None;
+    }
+    let local_http = ["http://127.0.0.1", "http://localhost"].iter().any(|host| {
+        url.strip_prefix(host)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(':') || rest.starts_with('/'))
+    });
+    let https = url
+        .strip_prefix("https://")
+        .is_some_and(|rest| !rest.is_empty());
+    if https || local_http {
+        Some(url.to_string())
+    } else {
+        None
+    }
+}
+
+/// OmaStat base URLs in the order they should be tried. `OMASTAT_URL` (when set and valid)
+/// is the only endpoint; an invalid override yields no endpoint rather than a silent fallback.
+pub fn omastat_bases() -> Vec<String> {
+    match std::env::var("OMASTAT_URL") {
+        Ok(raw) if !raw.trim().is_empty() => parse_omastat_override(&raw).into_iter().collect(),
+        _ => DEFAULT_OMASTAT_BASES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    }
+}
+
+/// Proxy settings are the only part of the engine's environment handed to curl.
+pub fn proxy_envs() -> Vec<(&'static str, String)> {
+    [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+    ]
+    .iter()
+    .filter_map(|k| {
+        std::env::var(k)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| (*k, v))
+    })
+    .collect()
+}
+
 /// POSTs the payload with curl and reports whether OmaStat actually accepted it.
+/// The body goes through stdin (`--data-binary @-`) so it never shows up in `ps`.
 /// curl exits 0 for HTTP 4xx/5xx too, so the response body's `success` flag is the source of truth.
 fn post_survey(endpoint: &str, json_data: &str, max_time_secs: u64) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(max_time_secs + 1);
     let max_time = max_time_secs.to_string();
-    let output = crate::subproc::run_cmd_bounded(
+    let user_agent = format!("User-Agent: OmaRank-Engine/{}", env!("CARGO_PKG_VERSION"));
+    let proxies = proxy_envs();
+    let envs: Vec<(&str, &str)> = proxies.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let output = crate::subproc::run_cmd_bounded_with_stdin(
         "/usr/bin/curl",
         &[
             "-s",
@@ -127,12 +189,13 @@ fn post_survey(endpoint: &str, json_data: &str, max_time_secs: u64) -> Result<()
             "-H",
             "Content-Type: application/json",
             "-H",
-            "User-Agent: OmaRank-Engine/1.0",
-            "-d",
-            json_data,
+            &user_agent,
+            "--data-binary",
+            "@-",
             endpoint,
         ],
-        &[],
+        &envs,
+        Some(json_data.as_bytes()),
         deadline,
         4096,
     )
@@ -158,12 +221,23 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
         Err(e) => return (false, format!("JSON serialization error: {}", e)),
     };
 
-    let official_endpoint = "https://omastat.omarchy.org/api/survey/v1";
-    let community_endpoint = "https://omastat.ozan-zdil.workers.dev/api/survey/v1";
+    let bases = omastat_bases();
+    if bases.is_empty() {
+        return (
+            false,
+            "Survey not submitted (OMASTAT_URL must be https:// or http://localhost).".to_string(),
+        );
+    }
 
-    // 1. Try official endpoint first, 2. fall back to the live community deployment
-    let outcome = post_survey(official_endpoint, &json_data, 2)
-        .or_else(|_| post_survey(community_endpoint, &json_data, 3));
+    // Try each endpoint in order; the first one gets a little more time
+    let mut outcome = Err("no endpoint".to_string());
+    for (i, base) in bases.iter().enumerate() {
+        let endpoint = format!("{}/api/survey/v1", base);
+        outcome = post_survey(&endpoint, &json_data, if i == 0 { 4 } else { 2 });
+        if outcome.is_ok() {
+            break;
+        }
+    }
 
     match outcome {
         Ok(()) => {
@@ -188,6 +262,28 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn test_omastat_override_validation() {
+        assert_eq!(
+            parse_omastat_override("https://stats.example.org/"),
+            Some("https://stats.example.org".to_string())
+        );
+        assert_eq!(
+            parse_omastat_override("http://127.0.0.1:8787"),
+            Some("http://127.0.0.1:8787".to_string())
+        );
+        assert_eq!(
+            parse_omastat_override("http://localhost"),
+            Some("http://localhost".to_string())
+        );
+        assert_eq!(parse_omastat_override("http://example.org"), None);
+        assert_eq!(parse_omastat_override("http://localhost.evil.org"), None);
+        assert_eq!(parse_omastat_override("http://127.0.0.1.evil.org"), None);
+        assert_eq!(parse_omastat_override("https://"), None);
+        assert_eq!(parse_omastat_override("https://a b"), None);
+        assert_eq!(parse_omastat_override("file:///etc/passwd"), None);
+    }
 
     #[test]
     fn test_secure_survey_state_creation_and_permissions() {

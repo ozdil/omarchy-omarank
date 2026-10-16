@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -61,7 +61,27 @@ pub fn run_cmd_bounded(
     deadline: Instant,
     max_output_bytes: usize,
 ) -> Option<Vec<u8>> {
+    run_cmd_bounded_with_stdin(cmd_path, args, extra_envs, None, deadline, max_output_bytes)
+}
+
+/// Largest stdin payload accepted. It is far below the pipe buffer (64 KiB on Linux), so the
+/// single up-front write can never block on a child that does not read its input.
+pub const MAX_STDIN_BYTES: usize = 4096;
+
+/// Like `run_cmd_bounded`, but feeds `stdin_data` to the child (written fully, then stdin is
+/// closed before output polling starts). Used to keep request bodies out of the argv / `ps`.
+pub fn run_cmd_bounded_with_stdin(
+    cmd_path: &str,
+    args: &[&str],
+    extra_envs: &[(&str, &str)],
+    stdin_data: Option<&[u8]>,
+    deadline: Instant,
+    max_output_bytes: usize,
+) -> Option<Vec<u8>> {
     if Instant::now() >= deadline {
+        return None;
+    }
+    if stdin_data.is_some_and(|d| d.len() > MAX_STDIN_BYTES) {
         return None;
     }
 
@@ -70,7 +90,11 @@ pub fn run_cmd_bounded(
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("LC_ALL", "C")
-        .stdin(Stdio::null())
+        .stdin(if stdin_data.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
@@ -98,6 +122,14 @@ pub fn run_cmd_bounded(
         pid,
         active: true,
     };
+
+    if let Some(data) = stdin_data {
+        let mut stdin = guard.child.stdin.take()?;
+        // A child that exits early yields EPIPE (Rust ignores SIGPIPE); the guard reaps it.
+        stdin.write_all(data).ok()?;
+        // Dropping the handle closes the pipe so the child sees EOF
+        drop(stdin);
+    }
 
     let mut buffer = Vec::new();
     let mut chunk = [0u8; 4096];
@@ -246,6 +278,24 @@ mod tests {
         let deadline = Instant::now() + Duration::from_millis(100);
         let out = run_cmd_bounded("/bin/sleep", &["5"], &[], deadline, 1024);
         assert!(out.is_none());
+    }
+
+    #[test]
+    fn test_stdin_payload_roundtrip() {
+        let deadline = Instant::now() + Duration::from_millis(2000);
+        let out = run_cmd_bounded_with_stdin(
+            "/bin/cat",
+            &[],
+            &[],
+            Some(b"{\"hello\":1}"),
+            deadline,
+            1024,
+        );
+        assert_eq!(out.as_deref(), Some(&b"{\"hello\":1}"[..]));
+
+        let too_big = vec![b'x'; MAX_STDIN_BYTES + 1];
+        let out = run_cmd_bounded_with_stdin("/bin/cat", &[], &[], Some(&too_big), deadline, 8192);
+        assert!(out.is_none(), "oversized stdin payloads are refused");
     }
 
     #[test]
