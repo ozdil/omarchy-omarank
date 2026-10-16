@@ -49,6 +49,8 @@ Panel {
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
+  property bool showSurveyPreview: false
+  property string surveyPreviewText: ""
   property bool showAboutModal: false
   readonly property string manifestPath: Qt.resolvedUrl("manifest.json").toString().replace(/^file:\/\//, "")
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omarank/manifest.json"
@@ -82,6 +84,22 @@ Panel {
     if (score >= 31) return "" // Chip
     if (score >= 16) return "" // Laptop
     return "" // Alert
+  }
+
+  // Multi-line variant for the survey JSON preview: keeps newlines and double quotes (the
+  // Text is PlainText) but strips other control characters and markup-ish characters.
+  function cleanPreview(str, maxLen) {
+    if (!str) return ""
+    var s = String(str).slice(0, maxLen || 4096)
+    return s.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f<>&`'\\]/g, "").trim()
+  }
+
+  function toggleSurveyPreview() {
+    root.showSurveyPreview = !root.showSurveyPreview
+    if (root.showSurveyPreview && !surveyPreviewProc.running) {
+      root.surveyPreviewText = "Collecting payload..."
+      surveyPreviewProc.running = true
+    }
   }
 
   function cleanSanitized(str, maxLen) {
@@ -247,6 +265,18 @@ Panel {
   }
 
   Process {
+    id: surveyPreviewProc
+    command: [root.resolveEnginePath(), "--survey-preview"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var preview = root.cleanPreview(text, 4096)
+        root.surveyPreviewText = preview.length > 0 ? preview : "Preview unavailable."
+      }
+    }
+  }
+
+  Process {
     id: copyProc
   }
 
@@ -296,6 +326,7 @@ Panel {
   Component.onDestruction: {
     if (statusProc.running) statusProc.running = false
     if (surveyProc.running) surveyProc.running = false
+    if (surveyPreviewProc.running) surveyPreviewProc.running = false
     if (copyProc.running) copyProc.running = false
     if (launchProc.running) launchProc.running = false
   }
@@ -910,17 +941,67 @@ Panel {
         width: parent.width
         spacing: Style.space(6)
 
-        Button {
+        RowLayout {
           width: parent.width
-          bordered: true
-          text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
-          fontSize: Style.font.bodySmall
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.fontFamily
-          horizontalPadding: Style.spacing.controlPaddingX
-          verticalPadding: Style.spacing.controlPaddingY
-          enabled: !root.isSubmittingSurvey
-          onClicked: root.triggerSurvey()
+          spacing: Style.space(6)
+
+          Button {
+            Layout.fillWidth: true
+            bordered: true
+            text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
+            fontSize: Style.font.bodySmall
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            enabled: !root.isSubmittingSurvey
+            onClicked: root.triggerSurvey()
+          }
+
+          Button {
+            bordered: true
+            text: root.showSurveyPreview ? "Hide data" : "Preview data"
+            tooltipText: "Show the exact JSON the survey would send"
+            fontSize: Style.font.caption
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(8)
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: root.toggleSurveyPreview()
+          }
+        }
+
+        // Survey payload preview (output of omarank-engine --survey-preview, capped at 4 KiB)
+        BorderSurface {
+          visible: root.showSurveyPreview
+          width: parent.width
+          implicitHeight: Style.space(160)
+          radius: Style.cornerRadius
+          color: Qt.rgba(0, 0, 0, 0.25)
+          border.color: Qt.rgba(root.bar ? root.bar.foreground.r : 1, root.bar ? root.bar.foreground.g : 1, root.bar ? root.bar.foreground.b : 1, 0.22)
+          border.width: 1
+
+          Flickable {
+            id: previewFlick
+            anchors.fill: parent
+            anchors.margins: Style.space(8)
+            clip: true
+            contentWidth: width
+            contentHeight: previewText.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+
+            Text {
+              id: previewText
+              width: previewFlick.width
+              textFormat: Text.PlainText
+              text: root.surveyPreviewText
+              wrapMode: Text.WrapAnywhere
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.85
+              font.family: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
+              font.pixelSize: Style.font.caption
+            }
+          }
         }
 
         Text {

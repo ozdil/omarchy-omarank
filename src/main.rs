@@ -44,6 +44,16 @@ fn main() {
         return;
     }
 
+    if args.iter().any(|a| a == "--survey-preview") {
+        // Exactly what --submit-survey would send; nothing leaves the machine here
+        let payload = survey::create_survey_payload(&result);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload).unwrap_or_default()
+        );
+        return;
+    }
+
     if args.iter().any(|a| a == "--ladder") {
         print_ladder(&result);
         return;
