@@ -28,6 +28,7 @@ pub struct OmaStatPayload {
     pub storage_model: String,
     pub os_name: String,
     pub archetype_signature: String,
+    pub install_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -71,6 +72,48 @@ pub fn save_survey_state_to_path(state: &SurveyState, p: &std::path::Path) {
     }
 }
 
+/// Converts days since 1970-01-01 to a (year, month) civil date (Howard Hinnant's
+/// days_from_civil inverse), so no date crate is needed for the token's UTC month.
+fn year_month_from_epoch(epoch_secs: u64) -> (i64, u32) {
+    let z = (epoch_secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11], March-based
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    (year, month)
+}
+
+/// Anonymous, monthly rotating install token: the first 32 hex chars of
+/// sha256("omarank-survey-v1:" + machine-id + ":" + "YYYY-MM" in UTC).
+/// It lets OmaStat count one submission per machine per month; the hash cannot be reversed
+/// to the machine-id and changes every month, so submissions cannot be linked over time.
+pub fn compute_install_token(machine_id: &str, epoch_secs: u64) -> String {
+    use sha2::{Digest, Sha256};
+
+    let machine_id = machine_id.trim();
+    if machine_id.is_empty() {
+        return String::new();
+    }
+    let (year, month) = year_month_from_epoch(epoch_secs);
+    let input = format!("omarank-survey-v1:{}:{:04}-{:02}", machine_id, year, month);
+    let digest = Sha256::digest(input.as_bytes());
+    digest
+        .iter()
+        .take(16)
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+fn read_install_token(epoch_secs: u64) -> String {
+    // Unreadable machine-id: send an empty token rather than a guessable substitute
+    std::fs::read_to_string("/etc/machine-id")
+        .map(|id| compute_install_token(&id, epoch_secs))
+        .unwrap_or_default()
+}
+
 pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
     let epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -107,6 +150,7 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
         storage_model: result.hardware.storage_model.clone(),
         os_name: result.hardware.os_name.clone(),
         archetype_signature: result.archetype_signature.clone(),
+        install_token: read_install_token(epoch),
     }
 }
 
@@ -262,6 +306,32 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn test_year_month_from_epoch() {
+        assert_eq!(year_month_from_epoch(0), (1970, 1));
+        assert_eq!(year_month_from_epoch(951_782_400), (2000, 2)); // 2000-02-29 00:00 UTC
+        assert_eq!(year_month_from_epoch(1_709_251_199), (2024, 2)); // 2024-02-29 23:59:59
+        assert_eq!(year_month_from_epoch(1_709_251_200), (2024, 3)); // 2024-03-01 00:00:00
+        assert_eq!(year_month_from_epoch(1_767_225_599), (2025, 12)); // 2025-12-31 23:59:59
+        assert_eq!(year_month_from_epoch(1_767_225_600), (2026, 1)); // 2026-01-01 00:00:00
+    }
+
+    #[test]
+    fn test_install_token() {
+        let id = "0123456789abcdef0123456789abcdef\n";
+        // 2026-10-16 UTC: sha256("omarank-survey-v1:0123456789abcdef0123456789abcdef:2026-10")
+        let token = compute_install_token(id, 1_792_180_000);
+        assert_eq!(token, "b2040ad108eccdca7ad562875a06e92a");
+        assert_eq!(token.len(), 32);
+        // Same month, same token; next month, a different one
+        assert_eq!(compute_install_token(id, 1_792_180_000 + 86_400), token);
+        assert_ne!(
+            compute_install_token(id, 1_792_180_000 + 31 * 86_400),
+            token
+        );
+        assert_eq!(compute_install_token("  \n", 1_792_180_000), "");
+    }
 
     #[test]
     fn test_omastat_override_validation() {
