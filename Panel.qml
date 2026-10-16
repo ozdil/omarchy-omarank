@@ -118,9 +118,10 @@ Panel {
   function launchDashboard() {
     root.close()
     var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
-    launchProc.command = [dashPath]
-    launchDeadlineTimer.restart()
-    launchProc.running = true
+    // Detached: the dashboard is a long-lived window/terminal, so it must not be bound to
+    // launchDeadlineTimer, which killed it after 5 seconds.
+    dashboardProc.command = [dashPath]
+    dashboardProc.startDetached()
   }
 
   function triggerSurvey() {
@@ -240,6 +241,10 @@ Panel {
     id: copyProc
   }
 
+  Process {
+    id: dashboardProc
+  }
+
   FileView {
     id: manifestWatcher
     path: root.manifestPath
@@ -290,9 +295,15 @@ Panel {
     if (!statusProc.running) statusProc.running = true
   }
 
+  // Each engine run spawns lspci/nvidia-smi/inxi/hyprctl (nvidia-smi wakes a sleeping dGPU on
+  // hybrid laptops), so only poll while the panel is visible and refresh once when it opens.
+  onOpenedChanged: {
+    if (root.opened) root.refresh()
+  }
+
   Timer {
     interval: 30000
-    running: true
+    running: root.opened
     repeat: true
     triggeredOnStart: false
     onTriggered: {

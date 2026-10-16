@@ -32,6 +32,8 @@ for var in LD_PRELOAD LD_LIBRARY_PATH RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER RU
     fi
 done
 
+DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
+
 # Resolve trusted quickshell binary
 QUICKSHELL_BIN=""
 if [[ -x /usr/bin/quickshell ]]; then
@@ -44,11 +46,13 @@ fi
 
 # Prefer native Quickshell standalone UI if available
 if [[ "${1:-}" != "--cli" && -n "${QUICKSHELL_BIN}" ]]; then
-    if "${QUICKSHELL_BIN}" ipc call ozdil.omarank toggle >/dev/null 2>&1; then
-        exit 0
-    fi
     QML_SHELL="${DIR}/qml/shell.qml"
     if [[ -f "${QML_SHELL}" ]]; then
+        # Toggle an already running standalone window. Its IPC target is distinct from the
+        # bar Panel's "ozdil.omarank", which this call used to hit (re-opening the panel).
+        if "${QUICKSHELL_BIN}" ipc -p "${QML_SHELL}" call ozdil.omarank.window toggle >/dev/null 2>&1; then
+            exit 0
+        fi
         exec "${QUICKSHELL_BIN}" -p "${QML_SHELL}"
     fi
 fi
@@ -57,7 +61,11 @@ if [[ "${1:-}" == "--cli" ]]; then
     shift
 fi
 
-DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
+# The CLI view is interactive: when launched from the bar (no TTY), open it in a terminal
+if [[ ! -t 0 ]] && command -v xdg-terminal-exec >/dev/null 2>&1; then
+    exec xdg-terminal-exec "${DIR}/omarank-dashboard" --cli "$@"
+fi
+
 BIN="${DIR}/omarank-engine"
 STAMP="${DIR}/.engine-provenance"
 
@@ -106,34 +114,45 @@ if [[ "${NEEDS_BUILD}" -eq 1 && -n "${CARGO_BIN}" && -f "${DIR}/Cargo.toml" ]]; 
 fi
 
 # Fail-closed execution gate: require verified source identity, binary existence, and digest binding
-if [[ -z "${SOURCE_HASH}" ]]; then
-    echo "Security Error: Source identity could not be computed" >&2
-    exit 1
+# Packaged installs (PKGBUILD) ship only the binary, not src/: trust it when the binary
+# and its directory are root-owned and not writable by us (managed by pacman).
+PACKAGED_INSTALL=0
+if [[ -z "${SOURCE_HASH}" && -x "${BIN}" && ! -w "${BIN}" && ! -w "${DIR}" \
+      && "$(/usr/bin/stat -c %u "${BIN}" 2>/dev/null)" == "0" \
+      && "$(/usr/bin/stat -c %u "${DIR}" 2>/dev/null)" == "0" ]]; then
+    PACKAGED_INSTALL=1
 fi
 
-if [[ ! -x "${BIN}" ]]; then
-    echo "Error: omarank-engine binary not found or not executable. Please run 'cargo build --release --locked' in ${DIR}" >&2
-    exit 1
-fi
+if [[ "${PACKAGED_INSTALL}" -eq 0 ]]; then
+    if [[ -z "${SOURCE_HASH}" ]]; then
+        echo "Security Error: Source identity could not be computed" >&2
+        exit 1
+    fi
 
-if [[ ! -f "${STAMP}" ]]; then
-    echo "Security Error: Engine provenance stamp missing" >&2
-    exit 1
-fi
+    if [[ ! -x "${BIN}" ]]; then
+        echo "Error: omarank-engine binary not found or not executable. Please run 'cargo build --release --locked' in ${DIR}" >&2
+        exit 1
+    fi
 
-STORED_SRC=""
-STORED_BIN=""
-read -r STORED_SRC STORED_BIN < "${STAMP}" 2>/dev/null || true
+    if [[ ! -f "${STAMP}" ]]; then
+        echo "Security Error: Engine provenance stamp missing" >&2
+        exit 1
+    fi
 
-if [[ "${STORED_SRC}" != "${SOURCE_HASH}" ]]; then
-    echo "Security Error: Engine source provenance mismatch" >&2
-    exit 1
-fi
+    STORED_SRC=""
+    STORED_BIN=""
+    read -r STORED_SRC STORED_BIN < "${STAMP}" 2>/dev/null || true
 
-CURRENT_BIN_HASH="$(/usr/bin/sha256sum "${BIN}" 2>/dev/null | /usr/bin/awk '{print $1}')"
-if [[ -z "${CURRENT_BIN_HASH}" || "${CURRENT_BIN_HASH}" != "${STORED_BIN}" ]]; then
-    echo "Security Error: Engine binary provenance mismatch" >&2
-    exit 1
+    if [[ "${STORED_SRC}" != "${SOURCE_HASH}" ]]; then
+        echo "Security Error: Engine source provenance mismatch" >&2
+        exit 1
+    fi
+
+    CURRENT_BIN_HASH="$(/usr/bin/sha256sum "${BIN}" 2>/dev/null | /usr/bin/awk '{print $1}')"
+    if [[ -z "${CURRENT_BIN_HASH}" || "${CURRENT_BIN_HASH}" != "${STORED_BIN}" ]]; then
+        echo "Security Error: Engine binary provenance mismatch" >&2
+        exit 1
+    fi
 fi
 
 /usr/bin/clear 2>/dev/null || true

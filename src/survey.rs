@@ -26,6 +26,8 @@ pub struct OmaStatPayload {
     pub ram_speed_mts: u32,
     pub mobo_vendor: String,
     pub mobo_name: String,
+    pub system_vendor: String,
+    pub product_name: String,
     pub chipset: String,
     pub primary_display: String,
     pub display_count: usize,
@@ -285,6 +287,8 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
         ram_speed_mts: result.hardware.ram_speed_mts,
         mobo_vendor: result.hardware.mobo_vendor.clone(),
         mobo_name: result.hardware.mobo_name.clone(),
+        system_vendor: result.hardware.system_vendor.clone(),
+        product_name: result.hardware.product_name.clone(),
         chipset: result.hardware.chipset.clone(),
         primary_display,
         display_count: result.hardware.monitors.len(),
@@ -292,6 +296,39 @@ pub fn create_survey_payload(result: &OmaRankResult) -> OmaStatPayload {
         storage_model: result.hardware.storage_model.clone(),
         os_name: result.hardware.os_name.clone(),
         archetype_signature: result.archetype_signature.clone(),
+    }
+}
+
+/// POSTs the payload with curl and reports whether OmaStat actually accepted it.
+/// curl exits 0 for HTTP 4xx/5xx too, so the response body's `success` flag is the source of truth.
+fn post_survey(endpoint: &str, json_data: &str, max_time_secs: u64) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(max_time_secs + 1);
+    let max_time = max_time_secs.to_string();
+    let output = crate::subproc::run_cmd_bounded(
+        "/usr/bin/curl",
+        &[
+            "-s",
+            "-S",
+            "--max-time", &max_time,
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-H", "User-Agent: OmaRank-Engine/1.0",
+            "-d", json_data,
+            endpoint,
+        ],
+        &[],
+        deadline,
+        4096,
+    )
+    .ok_or_else(|| "network error".to_string())?;
+
+    let resp: serde_json::Value =
+        serde_json::from_slice(&output).map_err(|_| "unexpected server response".to_string())?;
+    if resp.get("success").and_then(|v| v.as_bool()) == Some(true) {
+        Ok(())
+    } else {
+        let reason = resp.get("error").and_then(|v| v.as_str()).unwrap_or("rejected by server");
+        Err(crate::hardware::clean_string(reason, 80))
     }
 }
 
@@ -305,57 +342,20 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
     let official_endpoint = "https://omastat.omarchy.org/api/survey/v1";
     let community_endpoint = "https://omastat.ozan-zdil.workers.dev/api/survey/v1";
 
-    let primary_deadline = Instant::now() + Duration::from_secs(3);
+    // 1. Try official endpoint first, 2. fall back to the live community deployment
+    let outcome = post_survey(official_endpoint, &json_data, 2)
+        .or_else(|_| post_survey(community_endpoint, &json_data, 3));
 
-    // 1. Try official endpoint first
-    let mut output = crate::subproc::run_cmd_bounded(
-        "/usr/bin/curl",
-        &[
-            "-s",
-            "-S",
-            "--max-time", "2",
-            "-X", "POST",
-            "-H", "Content-Type: application/json",
-            "-H", "User-Agent: OmaRank-Engine/1.0",
-            "-d", &json_data,
-            official_endpoint,
-        ],
-        &[],
-        primary_deadline,
-        4096,
-    );
-
-    // 2. Fallback to live community deployment if official domain is not yet routed
-    if output.is_none() {
-        let fallback_deadline = Instant::now() + Duration::from_secs(4);
-        output = crate::subproc::run_cmd_bounded(
-            "/usr/bin/curl",
-            &[
-                "-s",
-                "-S",
-                "--max-time", "3",
-                "-X", "POST",
-                "-H", "Content-Type: application/json",
-                "-H", "User-Agent: OmaRank-Engine/1.0",
-                "-d", &json_data,
-                community_endpoint,
-            ],
-            &[],
-            fallback_deadline,
-            4096,
-        );
-    }
-
-    let mut state = load_survey_state();
-    state.has_opted_in = true;
-    state.last_submitted_epoch = payload.timestamp_epoch;
-    state.last_score = result.total_score;
-    save_survey_state(&state);
-
-    if output.is_some() {
-        (true, "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string())
-    } else {
-        (true, "[OK] Profile saved locally (Awaiting OmaStat community server deployment)".to_string())
+    match outcome {
+        Ok(()) => {
+            let mut state = load_survey_state();
+            state.has_opted_in = true;
+            state.last_submitted_epoch = payload.timestamp_epoch;
+            state.last_score = result.total_score;
+            save_survey_state(&state);
+            (true, "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string())
+        }
+        Err(reason) => (false, format!("Survey not submitted ({}). Please try again later.", reason)),
     }
 }
 

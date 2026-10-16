@@ -200,14 +200,14 @@ fn score_gpu(name: &str, driver: &str) -> u32 {
         99
     } else if n.contains("5070 ti") || n.contains("4080 super") || n.contains("4080") || n.contains("7900 xtx") {
         95
-    } else if n.contains("5070") || n.contains("4070 ti super") || n.contains("4070 ti") || n.contains("7900 xt") || n.contains("8800 xt") {
+    } else if n.contains("5070") || n.contains("4070 ti super") || n.contains("4070 ti") || n.contains("7900 xt") || n.contains("8800 xt") || n.contains("9070 xt") {
         90
-    } else if n.contains("4070 super") || n.contains("4070") || n.contains("7800 xt") || n.contains("3090") || n.contains("6950") {
+    } else if n.contains("4070 super") || n.contains("4070") || n.contains("7800 xt") || n.contains("3090") || n.contains("6950") || n.contains("9070") {
         86
     // Intel Battlemage discrete GPUs & mid-high GPUs
-    } else if n.contains("b580") || n.contains("battlemage") || n.contains("4060 ti") || n.contains("7700 xt") || n.contains("3080") {
+    } else if n.contains("b580") || n.contains("battlemage") || n.contains("5060 ti") || n.contains("4060 ti") || n.contains("7700 xt") || n.contains("3080") {
         82
-    } else if n.contains("b570") || n.contains("4060") || n.contains("3070") || n.contains("7600 xt") {
+    } else if n.contains("b570") || n.contains("5060") || n.contains("9060 xt") || n.contains("4060") || n.contains("3070") || n.contains("7600 xt") {
         76
     } else if n.contains("a770") || n.contains("a750") || n.contains("3060") || n.contains("6600") || n.contains("2070") {
         68
@@ -465,11 +465,11 @@ fn generate_archetype_signature(hw: &HardwareInfo) -> String {
         "U7"
     } else if hw.cpu_name.contains("Ultra 5") {
         "U5"
-    } else if hw.cpu_name.contains("Ryzen 9") {
+    } else if hw.cpu_name.contains("Ryzen 9") || hw.cpu_name.contains("Ryzen AI 9") {
         "R9"
-    } else if hw.cpu_name.contains("Ryzen 7") {
+    } else if hw.cpu_name.contains("Ryzen 7") || hw.cpu_name.contains("Ryzen AI 7") {
         "R7"
-    } else if hw.cpu_name.contains("Ryzen 5") {
+    } else if hw.cpu_name.contains("Ryzen 5") || hw.cpu_name.contains("Ryzen AI 5") {
         "R5"
     } else if hw.cpu_name.contains("i9") {
         "I9"
@@ -493,6 +493,8 @@ fn generate_archetype_signature(hw: &HardwareInfo) -> String {
         "4080"
     } else if hw.gpu_name.contains("RTX 4070") {
         "4070"
+    } else if hw.gpu_name.contains("RTX 5060") {
+        "5060"
     } else if hw.gpu_name.contains("RTX 4060") {
         "4060"
     } else if hw.gpu_name.contains("B580") || hw.gpu_name.contains("Battlemage") {
@@ -560,6 +562,16 @@ mod tests {
 
         let rank_potato = calculate_global_rank(10, 0, 12480);
         assert!(rank_potato > 12000, "Potato score should rank near bottom");
+    }
+
+    #[test]
+    fn test_next_gen_gpu_scoring() {
+        // RDNA4 / RTX 50 mid-range used to fall through to the generic driver score
+        assert_eq!(score_gpu("AMD Radeon RX 9070 XT", "amdgpu"), 90);
+        assert_eq!(score_gpu("AMD Radeon RX 9070", "amdgpu"), 86);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060 Ti", "nvidia"), 82);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060", "nvidia"), 76);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5070 Ti", "nvidia"), 95);
     }
 
     #[test]

@@ -141,7 +141,7 @@ fn print_ladder(res: &score::OmaRankResult) {
     ];
 
     for (t_badge, range, rank_span, icon, name, share) in tiers {
-        let is_my_tier = (res.total_score >= 76 && t_badge == "A")
+        let is_my_tier = (res.total_score >= 76 && res.total_score <= 88 && t_badge == "A")
             || (res.total_score >= 89 && res.total_score <= 95 && t_badge == "S")
             || (res.total_score >= 96 && t_badge == "S+")
             || (res.total_score >= 61 && res.total_score <= 75 && t_badge == "B")

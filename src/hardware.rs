@@ -26,6 +26,8 @@ pub struct HardwareInfo {
     pub mobo_vendor: String,
     pub mobo_name: String,
     pub mobo_bios: String,
+    pub system_vendor: String,
+    pub product_name: String,
     pub chipset: String,
     pub gpu_name: String,
     pub gpu_driver: String,
@@ -41,6 +43,7 @@ pub fn detect_hardware() -> HardwareInfo {
     let (ram_total_mb, ram_total_gb) = detect_ram();
     let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details(deadline);
     let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard(deadline);
+    let (system_vendor, product_name) = detect_system();
     let (gpu_name, gpu_driver) = detect_gpu(deadline);
     let monitors = detect_monitors(deadline);
     let (storage_type, storage_model) = detect_storage();
@@ -60,6 +63,8 @@ pub fn detect_hardware() -> HardwareInfo {
         mobo_vendor,
         mobo_name,
         mobo_bios,
+        system_vendor,
+        product_name,
         chipset,
         gpu_name,
         gpu_driver,
@@ -99,6 +104,12 @@ fn detect_cpu() -> (String, usize, usize, f64) {
         }
     }
 
+    // "cpu MHz" is the current (often idle) clock, which made the score drift between runs.
+    // Prefer the advertised maximum from cpufreq when it is available.
+    if let Some(max_khz) = read_cpufreq_max_khz() {
+        max_mhz = max_khz as f64 / 1000.0;
+    }
+
     if cores == 0 {
         cores = if threads > 0 { threads } else { 1 };
     }
@@ -107,6 +118,20 @@ fn detect_cpu() -> (String, usize, usize, f64) {
     }
 
     (name, cores, threads, max_mhz)
+}
+
+fn read_cpufreq_max_khz() -> Option<u64> {
+    let entries = fs::read_dir("/sys/devices/system/cpu").ok()?;
+    entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) && name.len() > 3
+        })
+        .filter_map(|e| fs::read_to_string(e.path().join("cpufreq/cpuinfo_max_freq")).ok())
+        .filter_map(|v| v.trim().parse::<u64>().ok())
+        .max()
 }
 
 fn detect_ram() -> (u64, f64) {
@@ -375,6 +400,13 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     )
 }
 
+/// OEM identity (e.g. "LENOVO" / "ThinkPad X1 Carbon Gen 11"). The board fields alone
+/// often carry only an internal part number on laptops, which OmaStat cannot map to a brand.
+fn detect_system() -> (String, String) {
+    let read = |f: &str| fs::read_to_string(format!("/sys/class/dmi/id/{}", f)).unwrap_or_default();
+    (clean_string(read("sys_vendor").trim(), 40), clean_string(read("product_name").trim(), 50))
+}
+
 fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
     let mut ram_type = String::from("DDR4");
     let mut speed_mts: u32 = 3200;
@@ -459,10 +491,16 @@ fn detect_storage() -> (String, String) {
                     break;
                 }
             } else if (name.starts_with("sd") || name.starts_with("vd")) && storage_model == "Solid State Drive" {
+                // Skip USB sticks / card readers
+                let removable = fs::read_to_string(format!("/sys/block/{}/removable", name)).unwrap_or_default();
+                if removable.trim() == "1" {
+                    continue;
+                }
                 let model_path = format!("/sys/block/{}/device/model", name);
                 if let Ok(m) = fs::read_to_string(&model_path) {
                     storage_model = clean_string(m.trim(), 40);
-                    storage_type = "SATA SSD".to_string();
+                    let rotational = fs::read_to_string(format!("/sys/block/{}/queue/rotational", name)).unwrap_or_default();
+                    storage_type = if rotational.trim() == "1" { "HDD".to_string() } else { "SATA SSD".to_string() };
                 }
             }
         }
@@ -483,15 +521,26 @@ fn detect_os() -> String {
     "Omarchy Linux".to_string()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::clean_string;
+
+    #[test]
+    fn test_clean_string_multibyte_truncation() {
+        // Cut lands inside "®" (2 bytes) / "™" (3 bytes); byte slicing used to panic here
+        assert_eq!(clean_string("Intel® Core™ i7", 6), "Intel®");
+        assert_eq!(clean_string("Intel® Core™ i7", 12), "Intel® Core™");
+        assert_eq!(clean_string("Omarchy Türkçe Sürüm", 9), "Omarchy T");
+        assert_eq!(clean_string("  <b>\"x\"</b> ", 10), "bx/b");
+    }
+}
+
 pub fn clean_string(s: &str, max_len: usize) -> String {
     let sanitized: String = s
         .chars()
         .filter(|c| !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\'')
         .collect();
-    let trimmed = sanitized.trim();
-    if trimmed.len() > max_len {
-        trimmed[..max_len].to_string()
-    } else {
-        trimmed.to_string()
-    }
+    // Truncate by characters: byte slicing panics inside multi-byte text such as
+    // "Intel® Core™" or a localized PRETTY_NAME, and release builds use panic=abort.
+    sanitized.trim().chars().take(max_len).collect::<String>().trim_end().to_string()
 }

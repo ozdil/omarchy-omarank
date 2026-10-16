@@ -22,6 +22,10 @@ package() {
     install -Dm755 "target/release/omarank-engine" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/omarank-engine"
     install -Dm644 "manifest.json" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/manifest.json"
     install -Dm644 "Panel.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/Panel.qml"
+    install -Dm644 "qml/shell.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/qml/shell.qml"
+    install -Dm644 "qml/MainWindow.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/qml/MainWindow.qml"
+    install -Dm644 "qml/theme/Theme.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/qml/theme/Theme.qml"
+    install -Dm644 "qml/theme/qmldir" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omarank/qml/theme/qmldir"
     install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
     install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
