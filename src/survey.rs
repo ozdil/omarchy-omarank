@@ -1,14 +1,7 @@
 use crate::score::OmaRankResult;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-
-extern "C" {
-    fn getuid() -> u32;
-}
-
-const O_NOFOLLOW: i32 = 0o400000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OmaStatPayload {
@@ -73,146 +66,8 @@ pub fn save_survey_state(state: &SurveyState) {
 }
 
 pub fn save_survey_state_to_path(state: &SurveyState, p: &std::path::Path) {
-    let parent = match p.parent() {
-        Some(par) => par,
-        None => return,
-    };
-
-    if !parent.exists() && fs::create_dir_all(parent).is_err() {
-        return;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
-        use std::sync::atomic::{AtomicU64, Ordering};
-
-        static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-        let parent_meta = match fs::symlink_metadata(parent) {
-            Ok(m) => m,
-            Err(_) => return,
-        };
-
-        // SAFETY: getuid is a POSIX libc function without side effects
-        let current_uid = unsafe { getuid() };
-
-        // Parent must be a real directory (not symlink) owned by the current process UID
-        if parent_meta.file_type().is_symlink()
-            || !parent_meta.file_type().is_dir()
-            || parent_meta.uid() != current_uid
-        {
-            return;
-        }
-
-        let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-
-        // Pre-check target path if it already exists
-        if let Ok(meta) = fs::symlink_metadata(p) {
-            if meta.file_type().is_symlink()
-                || !meta.file_type().is_file()
-                || meta.uid() != current_uid
-            {
-                return;
-            }
-        }
-
-        let json = match serde_json::to_string_pretty(state) {
-            Ok(j) => j,
-            Err(_) => return,
-        };
-
-        struct TempFileGuard<'a> {
-            path: &'a std::path::Path,
-            active: bool,
-        }
-
-        impl<'a> Drop for TempFileGuard<'a> {
-            fn drop(&mut self) {
-                if self.active {
-                    let _ = fs::remove_file(self.path);
-                }
-            }
-        }
-
-        let pid = std::process::id();
-        let mut created_file = None;
-        let mut tmp_path_buf = PathBuf::new();
-
-        // Retry loop to ensure unique sibling name and prevent any symlink redirection
-        for _ in 0..10 {
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let seq = STAGING_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let candidate =
-                parent.join(format!(".tmp_survey_state_{}_{}_{}.json", pid, nanos, seq));
-
-            let mut opts = fs::OpenOptions::new();
-            opts.write(true)
-                .create_new(true)
-                .mode(0o600)
-                .custom_flags(O_NOFOLLOW);
-
-            match opts.open(&candidate) {
-                Ok(f) => {
-                    tmp_path_buf = candidate;
-                    created_file = Some(f);
-                    break;
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return,
-            }
-        }
-
-        let mut tmp_file = match created_file {
-            Some(f) => f,
-            None => return,
-        };
-
-        let mut guard = TempFileGuard {
-            path: &tmp_path_buf,
-            active: true,
-        };
-
-        let _ = tmp_file.set_permissions(fs::Permissions::from_mode(0o600));
-
-        if tmp_file.write_all(json.as_bytes()).is_err() {
-            return;
-        }
-
-        if tmp_file.sync_all().is_err() {
-            return;
-        }
-
-        // Verify written bytes length
-        if let Ok(meta) = tmp_file.metadata() {
-            if meta.len() != json.len() as u64 {
-                return;
-            }
-        } else {
-            return;
-        }
-
-        drop(tmp_file);
-
-        // Re-verify target path prior to atomic rename to prevent TOCTOU symlink redirection
-        if let Ok(meta) = fs::symlink_metadata(p) {
-            if meta.file_type().is_symlink()
-                || !meta.file_type().is_file()
-                || meta.uid() != current_uid
-            {
-                return;
-            }
-        }
-
-        // Atomically replace target file via rename
-        if fs::rename(&tmp_path_buf, p).is_ok() {
-            let _ = fs::set_permissions(p, fs::Permissions::from_mode(0o600));
-            guard.active = false;
-        }
+    if let Ok(json) = serde_json::to_string_pretty(state) {
+        crate::securefs::write_owned_file_atomic(p, json.as_bytes());
     }
 }
 
@@ -332,6 +187,7 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_secure_survey_state_creation_and_permissions() {

@@ -91,8 +91,10 @@ Panel {
     return Qt.resolvedUrl("omarank-engine").toString().replace(/^file:\/\//, "")
   }
 
-  function refresh() {
+  // rescan=true bypasses the engine's per-boot hardware cache (re-runs lspci/inxi/nvidia-smi)
+  function refresh(rescan) {
     if (!statusProc.running) {
+      statusProc.command = [root.resolveEnginePath(), rescan ? "--rescan" : "--json"]
       statusProc.running = true
     }
   }
@@ -291,9 +293,7 @@ Panel {
     if (launchProc.running) launchProc.running = false
   }
 
-  Component.onCompleted: {
-    if (!statusProc.running) statusProc.running = true
-  }
+  Component.onCompleted: root.refresh()
 
   // Each engine run spawns lspci/nvidia-smi/inxi/hyprctl (nvidia-smi wakes a sleeping dGPU on
   // hybrid laptops), so only poll while the panel is visible and refresh once when it opens.
@@ -306,9 +306,7 @@ Panel {
     running: root.opened
     repeat: true
     triggeredOnStart: false
-    onTriggered: {
-      if (!statusProc.running) statusProc.running = true
-    }
+    onTriggered: root.refresh()
   }
 
   Timer {
@@ -354,7 +352,7 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (t === "r" || t === "R") {
-          if (!statusProc.running) statusProc.running = true
+          root.refresh(true)
         } else if (t === "a" || t === "A") {
           root.showAboutModal = !root.showAboutModal
         } else if (t === "c" || t === "C") {
@@ -420,7 +418,7 @@ Panel {
             horizontalPadding: Style.space(5)
             verticalPadding: Style.space(2)
             Layout.alignment: Qt.AlignVCenter
-            onClicked: root.refresh()
+            onClicked: root.refresh(true)
           }
 
           Button {

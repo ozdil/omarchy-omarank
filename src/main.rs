@@ -9,10 +9,12 @@ use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let hw = hardware::detect_hardware();
+    // --rescan ignores and rewrites the hardware cache, then behaves like --json
+    let rescan = args.iter().any(|a| a == "--rescan");
+    let hw = hardware::detect_hardware_cached(rescan);
     let result = score::calculate_score(&hw);
 
-    if args.iter().any(|a| a == "--json") {
+    if rescan || args.iter().any(|a| a == "--json") {
         print_json(&result);
         return;
     }

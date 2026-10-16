@@ -41,6 +41,81 @@ pub struct HardwareInfo {
     pub os_name: String,
 }
 
+/// How long a cached hardware profile stays valid within the same boot.
+const HW_CACHE_MAX_AGE_SECS: u64 = 3600;
+
+#[derive(Serialize, Deserialize)]
+struct HardwareCache {
+    engine_version: String,
+    boot_id: String,
+    saved_epoch: u64,
+    hardware: HardwareInfo,
+}
+
+fn hardware_cache_path() -> Option<std::path::PathBuf> {
+    crate::securefs::xdg_path("XDG_CACHE_HOME", ".cache", "hardware.json")
+}
+
+fn read_boot_id() -> String {
+    fs::read_to_string("/proc/sys/kernel/random/boot_id")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn cache_is_fresh(cache: &HardwareCache, boot_id: &str, now: u64) -> bool {
+    !boot_id.is_empty()
+        && cache.boot_id == boot_id
+        && cache.engine_version == env!("CARGO_PKG_VERSION")
+        && cache.saved_epoch <= now
+        && now - cache.saved_epoch < HW_CACHE_MAX_AGE_SECS
+}
+
+/// Hardware profile with a per-boot cache: lspci/inxi/nvidia-smi are slow (and nvidia-smi
+/// wakes a sleeping dGPU), so a profile from the same boot that is under an hour old is reused.
+/// Monitors are always re-read through hyprctl since they change with docking and are cheap.
+/// `rescan` ignores the cache and rewrites it.
+pub fn detect_hardware_cached(rescan: bool) -> HardwareInfo {
+    let boot_id = read_boot_id();
+    let path = hardware_cache_path();
+
+    if !rescan {
+        if let Some(p) = &path {
+            let cached = crate::securefs::read_owned_file(p, 64 * 1024)
+                .and_then(|c| serde_json::from_str::<HardwareCache>(&c).ok());
+            if let Some(cache) = cached {
+                if cache_is_fresh(&cache, &boot_id, now_epoch()) {
+                    let mut hw = cache.hardware;
+                    hw.monitors = detect_monitors(Instant::now() + Duration::from_millis(1500));
+                    return hw;
+                }
+            }
+        }
+    }
+
+    let hw = detect_hardware();
+    if let Some(p) = &path {
+        if !boot_id.is_empty() {
+            let cache = HardwareCache {
+                engine_version: env!("CARGO_PKG_VERSION").to_string(),
+                boot_id,
+                saved_epoch: now_epoch(),
+                hardware: hw.clone(),
+            };
+            if let Ok(json) = serde_json::to_string(&cache) {
+                crate::securefs::write_owned_file_atomic(p, json.as_bytes());
+            }
+        }
+    }
+    hw
+}
+
 pub fn detect_hardware() -> HardwareInfo {
     let deadline = Instant::now() + Duration::from_millis(3500);
     let (cpu_name, cpu_cores, cpu_threads, cpu_mhz) = detect_cpu();
@@ -656,7 +731,61 @@ fn detect_os() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean_string, is_integrated_gpu};
+    use super::*;
+
+    fn sample_hw() -> HardwareInfo {
+        HardwareInfo {
+            cpu_name: "Test CPU".into(),
+            cpu_cores: 8,
+            cpu_threads: 16,
+            cpu_mhz: 5000.0,
+            ram_total_mb: 32768,
+            ram_total_gb: 32.0,
+            ram_type: "Unknown".into(),
+            ram_speed_mts: 0,
+            ram_modules: 0,
+            ram_slots: 4,
+            mobo_vendor: "Vendor".into(),
+            mobo_name: "Board".into(),
+            mobo_bios: "1.0".into(),
+            system_vendor: "OEM".into(),
+            product_name: "Laptop".into(),
+            chipset: "Mainstream Chipset".into(),
+            gpu_name: "Generic GPU".into(),
+            gpu_driver: "drm".into(),
+            gpu_vram_mb: 0,
+            gpu_integrated: false,
+            monitors: vec![],
+            storage_type: "NVMe".into(),
+            storage_model: "Disk".into(),
+            os_name: "Omarchy".into(),
+        }
+    }
+
+    #[test]
+    fn test_hardware_cache_freshness() {
+        let cache = HardwareCache {
+            engine_version: env!("CARGO_PKG_VERSION").to_string(),
+            boot_id: "boot-a".into(),
+            saved_epoch: 10_000,
+            hardware: sample_hw(),
+        };
+        assert!(cache_is_fresh(&cache, "boot-a", 10_000 + 3599));
+        assert!(
+            !cache_is_fresh(&cache, "boot-a", 10_000 + 3600),
+            "older than 1h"
+        );
+        assert!(!cache_is_fresh(&cache, "boot-b", 10_001), "different boot");
+        assert!(!cache_is_fresh(&cache, "", 10_001), "unknown boot id");
+        assert!(
+            !cache_is_fresh(&cache, "boot-a", 9_000),
+            "saved in the future"
+        );
+
+        let json = serde_json::to_string(&cache).unwrap();
+        let back: HardwareCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.hardware.cpu_name, "Test CPU");
+    }
 
     #[test]
     fn test_integrated_gpu_classification() {
