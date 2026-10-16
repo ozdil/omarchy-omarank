@@ -16,6 +16,8 @@ pub struct OmaRankResult {
     pub total_score: u32,
     pub global_rank: u32,
     pub total_machines: u32,
+    /// Tier letter on the unified OmaRank/OmaStat scale (S+, S, A, B, C, D, E, F).
+    pub grade: String,
     pub tier_name: String,
     pub tier_icon: String,
     pub tier_nerd_icon: String,
@@ -59,7 +61,7 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
     let hw_seed = calculate_hw_seed(hw);
     let global_rank = calculate_global_rank(total_score, hw_seed, total_machines);
 
-    let (tier_name, tier_icon, tier_nerd_icon, tier_quote, tier_color, _) =
+    let (grade, tier_name, tier_icon, tier_nerd_icon, tier_quote, tier_color, _) =
         get_rank_tier(total_score);
 
     // Offline estimate from a fixed score distribution; crate::rank replaces it with the
@@ -74,6 +76,7 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
         total_score,
         global_rank,
         total_machines,
+        grade,
         tier_name,
         tier_icon,
         tier_nerd_icon,
@@ -522,9 +525,25 @@ fn score_storage(storage_type: &str, storage_model: &str) -> u32 {
     }
 }
 
-fn get_rank_tier(score: u32) -> (String, String, String, String, String, String) {
+/// Unified grade scale shared with OmaStat: (grade, min score, max score, tier name).
+pub const GRADE_SCALE: [(&str, u32, u32, &str); 8] = [
+    ("S+", 96, 100, "Cosmic Reality Simulator"),
+    ("S", 89, 95, "NASA Supercomputer"),
+    ("A", 76, 88, "Cyberpunk Beast"),
+    ("B", 61, 75, "Gaming Chair Missing"),
+    ("C", 46, 60, "Honest Daily Driver"),
+    ("D", 31, 45, "Budget Warrior"),
+    ("E", 16, 30, "Study Mode Only"),
+    ("F", 0, 15, "Potato Toaster"),
+];
+
+/// (grade, tier name, icon, nerd icon, quote, color, blurb). The match arms mirror GRADE_SCALE.
+type RankTier = (String, String, String, String, String, String, String);
+
+pub fn get_rank_tier(score: u32) -> RankTier {
     match score {
         96..=100 => (
+            "S+".to_string(),
             "Cosmic Reality Simulator".to_string(),
             "".to_string(),
             "".to_string(),
@@ -533,6 +552,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Top 1% ultra-enthusiast tier in the Omarchy community.".to_string(),
         ),
         89..=95 => (
+            "S".to_string(),
             "NASA Supercomputer".to_string(),
             "󰓅".to_string(),
             "󰓅".to_string(),
@@ -541,6 +561,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Top 5% elite powerhouse tier in the Omarchy community.".to_string(),
         ),
         76..=88 => (
+            "A".to_string(),
             "Cyberpunk Beast".to_string(),
             "".to_string(),
             "".to_string(),
@@ -550,6 +571,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Top 15% enthusiast battlestation tier.".to_string(),
         ),
         61..=75 => (
+            "B".to_string(),
             "Gaming Chair Missing".to_string(),
             "".to_string(),
             "".to_string(),
@@ -558,6 +580,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Upper 35% competitive gaming & dev segment.".to_string(),
         ),
         46..=60 => (
+            "C".to_string(),
             "Honest Daily Driver".to_string(),
             "".to_string(),
             "".to_string(),
@@ -567,6 +590,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Balanced middle 50% community baseline.".to_string(),
         ),
         31..=45 => (
+            "D".to_string(),
             "Budget Warrior".to_string(),
             "".to_string(),
             "".to_string(),
@@ -576,6 +600,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Lightweight terminal & efficiency tier.".to_string(),
         ),
         16..=30 => (
+            "E".to_string(),
             "Study Mode Only".to_string(),
             "".to_string(),
             "".to_string(),
@@ -585,6 +610,7 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Ultra-minimalist low-power tier.".to_string(),
         ),
         _ => (
+            "F".to_string(),
             "Potato Toaster".to_string(),
             "".to_string(),
             "".to_string(),
@@ -891,8 +917,49 @@ mod tests {
     }
 
     #[test]
+    fn test_grade_boundaries() {
+        let cases = [
+            (100, "S+"),
+            (96, "S+"),
+            (95, "S"),
+            (89, "S"),
+            (88, "A"),
+            (76, "A"),
+            (75, "B"),
+            (61, "B"),
+            (60, "C"),
+            (46, "C"),
+            (45, "D"),
+            (31, "D"),
+            (30, "E"),
+            (16, "E"),
+            (15, "F"),
+            (1, "F"),
+            (0, "F"),
+        ];
+        for (score, expected) in cases {
+            assert_eq!(get_rank_tier(score).0, expected, "score {}", score);
+        }
+        // GRADE_SCALE and get_rank_tier must agree on every score and tier name
+        for score in 0..=100 {
+            let (grade, name, ..) = get_rank_tier(score);
+            let row = GRADE_SCALE
+                .iter()
+                .find(|(_, min, max, _)| (*min..=*max).contains(&score))
+                .expect("every score has a grade");
+            assert_eq!(
+                (row.0, row.3),
+                (grade.as_str(), name.as_str()),
+                "score {}",
+                score
+            );
+        }
+    }
+
+    #[test]
     fn test_tier_badges() {
-        let (tier, _, nerd_icon, _, _, _) = get_rank_tier(88);
+        let (grade, tier, _, nerd_icon, _, _, _) = get_rank_tier(88);
+        assert_eq!(grade, "A");
         assert_eq!(tier, "Cyberpunk Beast");
         assert_eq!(nerd_icon, "");
     }

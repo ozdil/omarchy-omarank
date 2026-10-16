@@ -70,10 +70,12 @@ fn print_bar_status(res: &score::OmaRankResult) {
         res.tier_nerd_icon, res.total_score, res.tier_name
     );
     let tooltip = format!(
-        " OmaRank: {} / 100 ({})\n• {}\n\n• CPU: {} ({} threads)\n• GPU: {}\n• RAM: {:.1} GB\n• Display: {} @ {:.0}Hz\n\n[Left Click] View Hardware Breakdown & Survey",
+        " OmaRank: {} / 100 (Grade {} · {})\n• {}\n• {}\n\n• CPU: {} ({} threads)\n• GPU: {}\n• RAM: {:.1} GB\n• Display: {} @ {:.0}Hz\n\n[Left Click] View Hardware Breakdown & Survey",
         res.total_score,
+        res.grade,
         res.tier_name,
         res.tier_quote,
+        res.percentile_text,
         res.hardware.cpu_name,
         res.hardware.cpu_threads,
         res.hardware.gpu_name,
@@ -87,6 +89,7 @@ fn print_bar_status(res: &score::OmaRankResult) {
         "tooltip": tooltip,
         "score": res.total_score,
         "tier": res.tier_name,
+        "grade": res.grade,
         "color": res.tier_color,
         "icon": res.tier_nerd_icon,
         "nerd_icon": res.tier_nerd_icon,
@@ -116,8 +119,8 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
         res.total_score
     );
     println!(
-        "  \x1b[1;34m RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m",
-        res.tier_nerd_icon, res.tier_name
+        "  \x1b[1;34m RANK TIER:\x1b[0m           {} \x1b[1;33m[{}]\x1b[0m \x1b[1;37m{}\x1b[0m",
+        res.tier_nerd_icon, res.grade, res.tier_name
     );
     if res.rank_is_estimate {
         println!(
@@ -232,94 +235,55 @@ fn render_bar(score: u32) -> String {
 }
 
 fn print_ladder(res: &score::OmaRankResult) {
+    let population = if res.rank_is_estimate {
+        "offline estimate".to_string()
+    } else {
+        format!("{} OmaStat submissions", res.total_machines)
+    };
     println!("\x1b[1;32m╔════════════════════════════════════════════════════════════════════════════════════════════╗\x1b[0m");
-    println!("\x1b[1;32m║\x1b[0m   \x1b[1;37mOMASTAT GLOBAL HARDWARE LADDER & TIER LIST\x1b[0m ({} Active Battlestations)             \x1b[1;32m║\x1b[0m", res.total_machines);
+    println!(
+        "\x1b[1;32m║\x1b[0m   \x1b[1;37mOMASTAT GLOBAL HARDWARE LADDER & TIER LIST\x1b[0m ({})",
+        population
+    );
     println!("\x1b[1;32m╚════════════════════════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
 
-    let tiers = [
-        (
-            "S+",
-            "96-100",
-            "#1 - #124",
-            "",
-            "Cosmic Reality Simulator",
-            "Top 1%",
-        ),
-        (
-            "S",
-            "89-95",
-            "#125 - #624",
-            "󰓅",
-            "NASA Supercomputer",
-            "Top 5%",
-        ),
-        (
-            "A",
-            "76-88",
-            "#625 - #1872",
-            "",
-            "Cyberpunk Beast",
-            "Top 15%",
-        ),
-        (
-            "B",
-            "61-75",
-            "#1873 - #4368",
-            "",
-            "Gaming Chair Missing",
-            "Upper 35%",
-        ),
-        (
-            "C",
-            "46-60",
-            "#4369 - #8112",
-            "",
-            "Honest Daily Driver",
-            "Mid 50%",
-        ),
-        (
-            "D",
-            "31-45",
-            "#8113 - #10608",
-            "",
-            "Budget Warrior",
-            "Lower 25%",
-        ),
-        (
-            "E",
-            "16-30",
-            "#10609-#12105",
-            "",
-            "Study Mode Only",
-            "Ultra-Eco",
-        ),
-        (
-            "F",
-            "0-15",
-            "#12106-#12480",
-            "",
-            "Potato Toaster",
-            "Potato",
-        ),
+    // Rough share of the community per tier (descriptive; not a measured distribution)
+    let shares = [
+        "Top 1%",
+        "Top 5%",
+        "Top 15%",
+        "Upper 35%",
+        "Mid 50%",
+        "Lower 25%",
+        "Ultra-Eco",
+        "Potato",
     ];
 
-    for (t_badge, range, rank_span, icon, name, share) in tiers {
-        let is_my_tier = (res.total_score >= 76 && res.total_score <= 88 && t_badge == "A")
-            || (res.total_score >= 89 && res.total_score <= 95 && t_badge == "S")
-            || (res.total_score >= 96 && t_badge == "S+")
-            || (res.total_score >= 61 && res.total_score <= 75 && t_badge == "B")
-            || (res.total_score >= 46 && res.total_score <= 60 && t_badge == "C")
-            || (res.total_score >= 31 && res.total_score <= 45 && t_badge == "D")
-            || (res.total_score >= 16 && res.total_score <= 30 && t_badge == "E")
-            || (res.total_score < 16 && t_badge == "F");
+    for ((grade, min, max, name), share) in score::GRADE_SCALE.iter().zip(shares) {
+        let range = format!("{}-{}", min, max);
+        let (_, _, _, icon, _, _, _) = score::get_rank_tier(*min);
+        let rank_label = if res.rank_is_estimate {
+            format!("EST. RANK ~#{}", res.global_rank)
+        } else {
+            format!("WORLD RANK #{}", res.global_rank)
+        };
 
-        if is_my_tier {
+        if *grade == res.grade {
             println!("  \x1b[1;32m┌────────────────────────────────────────────────────────────────────────────────────────┐\x1b[0m");
-            println!("  \x1b[1;32m│\x1b[0m \x1b[1;33m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[1;37m{:<27}\x1b[0m \x1b[1;32m{:<9}\x1b[0m \x1b[1;32m│\x1b[0m", t_badge, range, rank_span, icon, name, share);
-            println!("  \x1b[1;32m│\x1b[0m   \x1b[1;32m󰄬 WORLD RANK #{} [YOUR PC]\x1b[0m • Score: \x1b[1;37m{}/100\x1b[0m ({})                    \x1b[1;32m│\x1b[0m", res.global_rank, res.total_score, res.tier_name);
+            println!(
+                "  \x1b[1;32m│\x1b[0m \x1b[1;33m[{:>2}]\x1b[0m {:<7} {} \x1b[1;37m{:<27}\x1b[0m \x1b[1;32m{:<9}\x1b[0m",
+                grade, range, icon, name, share
+            );
+            println!(
+                "  \x1b[1;32m│\x1b[0m   \x1b[1;32m󰄬 {} [YOUR PC]\x1b[0m • Score: \x1b[1;37m{}/100\x1b[0m • Grade {} ({})",
+                rank_label, res.total_score, res.grade, res.tier_name
+            );
             println!("  \x1b[1;32m└────────────────────────────────────────────────────────────────────────────────────────┘\x1b[0m");
         } else {
-            println!("    \x1b[1;30m[{:>2}]\x1b[0m {:<7} {:<15} {} \x1b[0;37m{:<27}\x1b[0m \x1b[90m{:<9}\x1b[0m", t_badge, range, rank_span, icon, name, share);
+            println!(
+                "    \x1b[1;30m[{:>2}]\x1b[0m {:<7} {} \x1b[0;37m{:<27}\x1b[0m \x1b[90m{:<9}\x1b[0m",
+                grade, range, icon, name, share
+            );
         }
     }
     println!();

@@ -18,6 +18,7 @@ Panel {
   property int globalRank: 0
   property int totalMachines: 12480
   property string tierName: "Benchmarking..."
+  property string tierGrade: ""
   property string tierIcon: ""
   property string rankNerdIcon: ""
   property string tierColor: "#38bdf8"
@@ -159,6 +160,7 @@ Panel {
           root.globalRank = Number(d.global_rank) || 0
           root.totalMachines = Number(d.total_machines) || 12480
           root.tierName = root.cleanSanitized(d.tier_name || "Unknown", 40)
+          root.tierGrade = root.cleanSanitized(d.grade || "", 3)
           root.tierIcon = root.cleanSanitized(d.tier_icon || "󰢮", 8)
           root.rankNerdIcon = root.cleanSanitized(d.tier_nerd_icon || root.rankNerdIconFor(root.totalScore), 8)
           root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
@@ -465,7 +467,7 @@ Panel {
             id: heroMeta
             textFormat: Text.PlainText
             width: parent.width
-            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
+            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.globalRank.toLocaleString() + " • ") : "") + (root.tierGrade ? ("GRADE " + root.tierGrade + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
