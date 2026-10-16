@@ -450,9 +450,11 @@ fn detect_system() -> (String, String) {
     )
 }
 
+/// `inxi -m` needs root to read the SPD/DMI tables, so for a normal user it usually returns no
+/// module data. Report "Unknown"/0 in that case instead of inventing a DDR4-3200 dual-channel kit.
 fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
-    let mut ram_type = String::from("DDR4");
-    let mut speed_mts: u32 = 3200;
+    let mut ram_type = String::from("Unknown");
+    let mut speed_mts: u32 = 0;
     let mut modules: usize = 0;
     let mut slots: usize = 4;
 
@@ -517,9 +519,6 @@ fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
         }
     }
 
-    if modules == 0 {
-        modules = 2;
-    }
     (ram_type, speed_mts, modules, slots)
 }
 

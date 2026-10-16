@@ -157,7 +157,8 @@ fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
         s += 4.0;
     }
 
-    // Generation bonus (DDR5 / DDR4 / DDR3)
+    // Generation bonus (DDR5 / DDR4 / DDR3). An undetected type ("Unknown") earns nothing,
+    // and the speed/channel bonuses below are naturally zero for 0 MT/s and 0 modules.
     let t = ram_type.to_uppercase();
     if t.contains("DDR5") {
         s += 10.0;
@@ -167,8 +168,6 @@ fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
         s += 0.0;
     } else if t.contains("DDR2") {
         s -= 6.0;
-    } else {
-        s += 4.0;
     }
 
     // Speed bonus (MT/s)
@@ -672,6 +671,15 @@ mod tests {
             ddr4_score, 90,
             "User 64GB DDR4-3200 should score exactly 90"
         );
+    }
+
+    #[test]
+    fn test_ram_unknown_details_get_no_bonus() {
+        // Without root, inxi reports nothing: only the capacity baseline may count
+        assert_eq!(score_ram(16.0, "Unknown", 0, 0), 46);
+        assert_eq!(score_ram(32.0, "Unknown", 0, 0), 62);
+        assert!(score_ram(16.0, "DDR4", 3200, 2) > score_ram(16.0, "Unknown", 0, 0));
+        assert!(score_ram(16.0, "DDR3", 1600, 1) == score_ram(16.0, "Unknown", 0, 0));
     }
 
     #[test]

@@ -165,13 +165,21 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
         res.hardware.chipset,
         res.hardware.mobo_bios
     );
-    println!(
-        "  • Memory:      {:.1} GB {} @ {} MT/s ({} populated slots)",
-        res.hardware.ram_total_gb,
-        res.hardware.ram_type,
-        res.hardware.ram_speed_mts,
-        res.hardware.ram_modules
-    );
+    if res.hardware.ram_speed_mts > 0 && res.hardware.ram_modules > 0 {
+        println!(
+            "  • Memory:      {:.1} GB {} @ {} MT/s ({} populated slots)",
+            res.hardware.ram_total_gb,
+            res.hardware.ram_type,
+            res.hardware.ram_speed_mts,
+            res.hardware.ram_modules
+        );
+    } else {
+        // Module details need root (inxi -m); do not print a made-up speed/slot count
+        println!(
+            "  • Memory:      {:.1} GB {} (module details need root)",
+            res.hardware.ram_total_gb, res.hardware.ram_type
+        );
+    }
     if let Some(m) = res.hardware.monitors.first() {
         println!(
             "  • Display:     {} ({}x{} @ {:.0}Hz)",
