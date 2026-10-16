@@ -37,7 +37,7 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
         hw.ram_modules,
     );
     let mobo_score = score_mobo(&hw.chipset, &hw.mobo_name);
-    let gpu_score = score_gpu(&hw.gpu_name, &hw.gpu_driver);
+    let gpu_score = score_gpu(&hw.gpu_name, &hw.gpu_driver, hw.gpu_integrated);
     let display_score = score_display(&hw.monitors);
     let storage_score = score_storage(&hw.storage_type, &hw.storage_model);
 
@@ -197,9 +197,70 @@ fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
     (s.round() as u32).clamp(5, 100)
 }
 
-fn score_gpu(name: &str, driver: &str) -> u32 {
+/// Integrated GPU classes by codename / marketing name as lspci reports them.
+/// Returns None when nothing iGPU-specific is recognised.
+fn integrated_gpu_class(n: &str) -> Option<u32> {
+    let has = |pats: &[&str]| pats.iter().any(|p| n.contains(p));
+    if has(&["strix halo", "8060s", "8050s"]) {
+        // Ryzen AI Max (40 CU RDNA 3.5) is far ahead of the other APUs
+        Some(60)
+    } else if has(&[
+        "strix point",
+        "strix",
+        "krackan",
+        "890m",
+        "880m",
+        "860m",
+        "840m",
+    ]) {
+        // RDNA 3.5 (Radeon 890M class)
+        Some(52)
+    } else if has(&["phoenix", "hawk point", "780m", "760m", "740m"]) {
+        // RDNA 3 (Radeon 780M class)
+        Some(48)
+    } else if has(&["lunar lake", "arc 130v", "arc 140v"]) {
+        Some(46)
+    } else if has(&["arrow lake", "meteor lake", "arc 8"]) {
+        Some(42)
+    } else if has(&["rembrandt", "680m", "660m", "iris"]) {
+        // RDNA 2 (Radeon 680M) and Intel Iris Xe
+        Some(38)
+    } else if has(&[
+        "renoir",
+        "cezanne",
+        "lucienne",
+        "barcelo",
+        "picasso",
+        "raven",
+        "mendocino",
+        "van gogh",
+    ]) {
+        // Vega / RDNA 2 lite APUs
+        Some(30)
+    } else if has(&["uhd", "intel graphics"]) {
+        Some(28)
+    } else {
+        None
+    }
+}
+
+fn score_integrated_gpu(n: &str, d: &str) -> u32 {
+    integrated_gpu_class(n).unwrap_or(if d == "amdgpu" || n.contains("amd") {
+        30
+    } else {
+        28
+    })
+}
+
+fn score_gpu(name: &str, driver: &str, integrated: bool) -> u32 {
     let n = name.to_lowercase();
     let d = driver.to_lowercase();
+
+    // An iGPU must never reach the generic per-driver scores below (amdgpu 65 / xe 78),
+    // which are meant for unrecognised discrete cards.
+    if integrated {
+        return score_integrated_gpu(&n, &d);
+    }
 
     // Top tier NVIDIA / AMD Flagships (Next-Gen & Current Titans)
     if n.contains("5090") {
@@ -261,14 +322,13 @@ fn score_gpu(name: &str, driver: &str) -> u32 {
         50
     } else if n.contains("1060") || n.contains("1050") || n.contains("gtx 970") {
         40
-    // Integrated GPUs
-    } else if n.contains("radeon 780m") || n.contains("radeon 890m") || n.contains("arc 8") {
-        48
-    } else if n.contains("iris") || n.contains("radeon 680m") {
-        38
-    } else if n.contains("uhd") || n.contains("intel graphics") || d == "i915" {
+    // Integrated GPU names that slipped through detection without the integrated flag
+    } else if let Some(class) = integrated_gpu_class(&n) {
+        class
+    } else if d == "i915" {
         28
-    } else if d == "nvidia" {
+    } else if d.starts_with("nvidia") {
+        // nvidia-smi reports the driver as "nvidia <version>"
         70
     } else if d == "amdgpu" {
         65
@@ -721,11 +781,99 @@ mod tests {
     #[test]
     fn test_next_gen_gpu_scoring() {
         // RDNA4 / RTX 50 mid-range used to fall through to the generic driver score
-        assert_eq!(score_gpu("AMD Radeon RX 9070 XT", "amdgpu"), 90);
-        assert_eq!(score_gpu("AMD Radeon RX 9070", "amdgpu"), 86);
-        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060 Ti", "nvidia"), 82);
-        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060", "nvidia"), 76);
-        assert_eq!(score_gpu("NVIDIA GeForce RTX 5070 Ti", "nvidia"), 95);
+        assert_eq!(score_gpu("AMD Radeon RX 9070 XT", "amdgpu", false), 90);
+        assert_eq!(score_gpu("AMD Radeon RX 9070", "amdgpu", false), 86);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060 Ti", "nvidia", false), 82);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5060", "nvidia", false), 76);
+        assert_eq!(score_gpu("NVIDIA GeForce RTX 5070 Ti", "nvidia", false), 95);
+    }
+
+    #[test]
+    fn test_integrated_gpu_scoring() {
+        let amd = "Advanced Micro Devices, Inc. [AMD/ATI] ";
+        assert_eq!(score_gpu(&format!("{amd}Phoenix1"), "amdgpu", true), 48);
+        assert_eq!(score_gpu(&format!("{amd}Hawk Point1"), "amdgpu", true), 48);
+        assert_eq!(
+            score_gpu(&format!("{amd}Strix [Radeon 880M / 890M]"), "amdgpu", true),
+            52
+        );
+        assert_eq!(
+            score_gpu(
+                &format!("{amd}Krackan [Radeon 840M / 860M]"),
+                "amdgpu",
+                true
+            ),
+            52
+        );
+        assert_eq!(
+            score_gpu(&format!("{amd}Rembrandt [Radeon 680M]"), "amdgpu", true),
+            38
+        );
+        assert_eq!(
+            score_gpu(
+                &format!("{amd}Cezanne [Radeon Vega Series]"),
+                "amdgpu",
+                true
+            ),
+            30
+        );
+        assert_eq!(score_gpu(&format!("{amd}Renoir"), "amdgpu", true), 30);
+        // Unknown APU must not get the generic discrete amdgpu score (65)
+        assert_eq!(score_gpu(&format!("{amd}Device 15bf"), "amdgpu", true), 30);
+
+        let intel = "Intel Corporation ";
+        assert_eq!(
+            score_gpu(
+                &format!("{intel}Lunar Lake [Intel Arc Graphics 130V / 140V]"),
+                "xe",
+                true
+            ),
+            46
+        );
+        assert_eq!(
+            score_gpu(
+                &format!("{intel}Meteor Lake-P [Intel Arc Graphics]"),
+                "i915",
+                true
+            ),
+            42
+        );
+        assert_eq!(
+            score_gpu(&format!("{intel}Arrow Lake-P [Intel Graphics]"), "xe", true),
+            42
+        );
+        assert_eq!(
+            score_gpu(
+                &format!("{intel}TigerLake-LP GT2 [Iris Xe Graphics]"),
+                "i915",
+                true
+            ),
+            38
+        );
+        assert_eq!(
+            score_gpu(
+                &format!("{intel}Alder Lake-P GT1 [UHD Graphics]"),
+                "i915",
+                true
+            ),
+            28
+        );
+        // An xe-driven iGPU must not get the generic discrete xe score (78)
+        assert_eq!(score_gpu(&format!("{intel}Device 7d67"), "xe", true), 28);
+
+        // Discrete cards with unknown names still use the per-driver fallback
+        assert_eq!(
+            score_gpu(
+                "Advanced Micro Devices, Inc. [AMD/ATI] Device 73ff",
+                "amdgpu",
+                false
+            ),
+            65
+        );
+        assert_eq!(
+            score_gpu("NVIDIA Quadro Mystery", "nvidia 550.54", false),
+            70
+        );
     }
 
     #[test]

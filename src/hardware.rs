@@ -31,6 +31,10 @@ pub struct HardwareInfo {
     pub chipset: String,
     pub gpu_name: String,
     pub gpu_driver: String,
+    /// Dedicated VRAM in MiB (nvidia-smi or amdgpu sysfs); 0 when unknown.
+    pub gpu_vram_mb: u64,
+    /// True for iGPUs (Intel non-Arc-A/B, AMD APUs). Drives the integrated scoring table.
+    pub gpu_integrated: bool,
     pub monitors: Vec<MonitorInfo>,
     pub storage_type: String,
     pub storage_model: String,
@@ -44,7 +48,7 @@ pub fn detect_hardware() -> HardwareInfo {
     let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details(deadline);
     let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard(deadline);
     let (system_vendor, product_name) = detect_system();
-    let (gpu_name, gpu_driver) = detect_gpu(deadline);
+    let (gpu_name, gpu_driver, gpu_vram_mb, gpu_integrated) = detect_gpu(deadline);
     let monitors = detect_monitors(deadline);
     let (storage_type, storage_model) = detect_storage();
     let os_name = detect_os();
@@ -68,6 +72,8 @@ pub fn detect_hardware() -> HardwareInfo {
         chipset,
         gpu_name,
         gpu_driver,
+        gpu_vram_mb,
+        gpu_integrated,
         monitors,
         storage_type,
         storage_model,
@@ -155,13 +161,77 @@ fn detect_ram() -> (u64, f64) {
     (total_mb, (total_gb * 10.0).round() / 10.0)
 }
 
-fn detect_gpu(deadline: Instant) -> (String, String) {
-    // 1. If nvidia-smi is available, query exact discrete GPU model and driver
+/// AMD APU codenames as lspci prints them (e.g. "Phoenix1", "Rembrandt [Radeon 680M]",
+/// "Strix [Radeon 880M / 890M]"). APUs can carve out a large UMA frame buffer, so the name is
+/// checked in addition to the VRAM size.
+pub fn is_amd_apu_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    [
+        "strix",
+        "krackan",
+        "phoenix",
+        "hawk point",
+        "rembrandt",
+        "renoir",
+        "cezanne",
+        "lucienne",
+        "barcelo",
+        "picasso",
+        "raven",
+        "mendocino",
+        "van gogh",
+    ]
+    .iter()
+    .any(|c| n.contains(c))
+}
+
+/// Decides whether a display controller is an integrated GPU.
+/// Intel: everything except Arc A/B (Alchemist/Battlemage) discrete cards.
+/// AMD: an APU codename, or amdgpu reporting less than 2 GiB of VRAM.
+fn is_integrated_gpu(vendor: &str, device: &str, driver: &str, vram_mb: u64) -> bool {
+    if vendor.contains("NVIDIA") {
+        return false;
+    }
+    if vendor.contains("Intel") {
+        return !(device.contains("Arc A")
+            || device.contains("Arc B")
+            || device.contains("Battlemage"));
+    }
+    if vendor.contains("Advanced Micro") || vendor.contains("AMD") || driver == "amdgpu" {
+        if is_amd_apu_name(device) {
+            return true;
+        }
+        if vram_mb > 0 {
+            return vram_mb < 2048;
+        }
+        // No VRAM info: only a branded RX / Radeon Pro part is assumed discrete
+        return !(device.contains("RX ") || device.contains("Radeon Pro"));
+    }
+    false
+}
+
+/// amdgpu exposes the dedicated VRAM size in bytes; other drivers do not have this file.
+fn read_pci_vram_mb(slot: &str) -> u64 {
+    if slot.is_empty() {
+        return 0;
+    }
+    let primary = format!("/sys/bus/pci/devices/0000:{}/mem_info_vram_total", slot);
+    let alt = format!("/sys/bus/pci/devices/{}/mem_info_vram_total", slot);
+    fs::read_to_string(&primary)
+        .or_else(|_| fs::read_to_string(&alt))
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|bytes| bytes / (1024 * 1024))
+        .unwrap_or(0)
+}
+
+fn detect_gpu(deadline: Instant) -> (String, String, u64, bool) {
+    // 1. If nvidia-smi is available, query exact discrete GPU model, driver and VRAM (MiB)
     if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
         "/usr/bin/nvidia-smi",
         &[
-            "--query-gpu=gpu_name,driver_version",
-            "--format=csv,noheader",
+            "--query-gpu=gpu_name,driver_version,memory.total",
+            "--format=csv,noheader,nounits",
         ],
         &[],
         deadline,
@@ -177,8 +247,17 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
                 } else {
                     "nvidia".to_string()
                 };
+                let vram_mb = parts
+                    .get(2)
+                    .and_then(|v| v.trim().parse::<u64>().ok())
+                    .unwrap_or(0);
                 if !name.is_empty() {
-                    return (clean_string(name, 55), clean_string(&drv, 30));
+                    return (
+                        clean_string(name, 55),
+                        clean_string(&drv, 30),
+                        vram_mb,
+                        false,
+                    );
                 }
             }
         }
@@ -188,7 +267,8 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
     struct GpuCandidate {
         name: String,
         driver: String,
-        is_discrete: bool,
+        vram_mb: u64,
+        integrated: bool,
     }
     let mut candidates: Vec<GpuCandidate> = Vec::new();
 
@@ -226,35 +306,31 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
                         }
                     }
 
-                    let is_discrete = vendor.contains("NVIDIA")
-                        || (vendor.contains("Advanced Micro")
-                            && (device.contains("RX ") || device.contains("Radeon Pro")))
-                        || (vendor.contains("Intel")
-                            && (device.contains("Arc A")
-                                || device.contains("Arc B")
-                                || device.contains("Battlemage")));
+                    let vram_mb = read_pci_vram_mb(slot);
+                    let integrated = is_integrated_gpu(vendor, device, &dev_driver, vram_mb);
 
                     candidates.push(GpuCandidate {
                         name: full_name,
                         driver: dev_driver,
-                        is_discrete,
+                        vram_mb,
+                        integrated,
                     });
                 }
             }
         }
     }
 
-    if let Some(discrete) = candidates.iter().find(|c| c.is_discrete) {
+    // Prefer a discrete card on hybrid laptops; otherwise report the first controller
+    if let Some(c) = candidates
+        .iter()
+        .find(|c| !c.integrated)
+        .or_else(|| candidates.first())
+    {
         return (
-            clean_string(&discrete.name, 55),
-            clean_string(&discrete.driver, 30),
-        );
-    }
-
-    if let Some(first) = candidates.first() {
-        return (
-            clean_string(&first.name, 55),
-            clean_string(&first.driver, 30),
+            clean_string(&c.name, 55),
+            clean_string(&c.driver, 30),
+            c.vram_mb,
+            c.integrated,
         );
     }
 
@@ -275,7 +351,9 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
         }
     }
 
-    (String::from("Generic GPU"), driver)
+    // i915 only drives Intel iGPUs; anything else stays "unknown" (not integrated)
+    let integrated = driver == "i915";
+    (String::from("Generic GPU"), driver, 0, integrated)
 }
 
 fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
@@ -578,7 +656,66 @@ fn detect_os() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::clean_string;
+    use super::{clean_string, is_integrated_gpu};
+
+    #[test]
+    fn test_integrated_gpu_classification() {
+        let amd = "Advanced Micro Devices, Inc. [AMD/ATI]";
+        assert!(is_integrated_gpu(amd, "Phoenix1", "amdgpu", 512));
+        // APUs with a large UMA carve-out are still integrated
+        assert!(is_integrated_gpu(
+            amd,
+            "Strix [Radeon 880M / 890M]",
+            "amdgpu",
+            8192
+        ));
+        assert!(is_integrated_gpu(
+            amd,
+            "Unknown Device 1234",
+            "amdgpu",
+            1024
+        ));
+        assert!(!is_integrated_gpu(
+            amd,
+            "Navi 31 [Radeon RX 7900 XT/7900 XTX]",
+            "amdgpu",
+            24560
+        ));
+        assert!(!is_integrated_gpu(
+            amd,
+            "Navi 48 [Radeon RX 9070 XT]",
+            "amdgpu",
+            0
+        ));
+
+        let intel = "Intel Corporation";
+        assert!(is_integrated_gpu(
+            intel,
+            "Meteor Lake-P [Intel Arc Graphics]",
+            "i915",
+            0
+        ));
+        assert!(is_integrated_gpu(
+            intel,
+            "Lunar Lake [Intel Arc Graphics 130V / 140V]",
+            "xe",
+            0
+        ));
+        assert!(!is_integrated_gpu(intel, "DG2 [Arc A770]", "i915", 0));
+        assert!(!is_integrated_gpu(
+            intel,
+            "Battlemage G21 [Arc B580]",
+            "xe",
+            0
+        ));
+
+        assert!(!is_integrated_gpu(
+            "NVIDIA Corporation",
+            "AD102 [GeForce RTX 4090]",
+            "nvidia",
+            0
+        ));
+    }
 
     #[test]
     fn test_clean_string_multibyte_truncation() {
