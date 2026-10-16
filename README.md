@@ -150,6 +150,8 @@ OmaRank complies strictly with the Omarchy Linux Security Standards (AGENTS.md):
 
 ## What's New in 1.4.0
 
+Full list of fixes and changes: [CHANGELOG.md](CHANGELOG.md).
+
 - RAM details that cannot be read without root are reported as `Unknown` instead of a made-up DDR4-3200 kit, and are not scored.
 - Integrated GPUs (AMD APUs, Intel iGPUs) are detected (`gpu_integrated`, `gpu_vram_mb`) and scored by class instead of the generic driver score.
 - The discrete GPU score table is data (`src/gpu_scores.json`) and can be overridden per user.

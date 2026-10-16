@@ -103,6 +103,8 @@ Harici GPU puanları yerleşik bir tablodan gelir; `~/.config/omarank/gpu_scores
 
 ## 1.4.0 Sürümündeki Düzeltmeler
 
+Tüm düzeltme ve değişikliklerin listesi: [CHANGELOG.md](CHANGELOG.md).
+
 - Root olmadan okunamayan RAM bilgileri uydurma DDR4-3200 yerine `Unknown` olarak gösterilir ve puanlanmaz.
 - Dahili GPU'lar (AMD APU'lar, Intel iGPU'lar) tespit edilir (`gpu_integrated`, `gpu_vram_mb`) ve genel sürücü puanı yerine sınıflarına göre puanlanır.
 - Harici GPU puan tablosu veri dosyasıdır (`src/gpu_scores.json`) ve kullanıcı bazında değiştirilebilir.

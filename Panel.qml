@@ -394,14 +394,13 @@ Panel {
         } else if (t === "a" || t === "A") {
           root.showAboutModal = !root.showAboutModal
         } else if (t === "c" || t === "C") {
-          root.copyShareableCard()
-        } else if (t === "s" || t === "S") {
-          root.submitSurvey()
-        } else if (t === "m" || t === "M") {
-          root.launchMissionCenter()
-        } else if (t === "b" || t === "B") {
-          root.launchBtop()
+          root.copyToClipboard(root.archetypeSignature, "Archetype Copied: " + root.archetypeSignature)
+        } else if (t === "d" || t === "D") {
+          root.launchDashboard()
+        } else if (t === "l" || t === "L") {
+          root.openWebLeaderboard()
         }
+        // Survey submission stays on its button only: it sends data, so no single-key shortcut.
       }
 
       Column {
