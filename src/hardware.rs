@@ -127,7 +127,9 @@ fn read_cpufreq_max_khz() -> Option<u64> {
         .filter(|e| {
             let name = e.file_name();
             let name = name.to_string_lossy();
-            name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) && name.len() > 3
+            name.starts_with("cpu")
+                && name[3..].chars().all(|c| c.is_ascii_digit())
+                && name.len() > 3
         })
         .filter_map(|e| fs::read_to_string(e.path().join("cpufreq/cpuinfo_max_freq")).ok())
         .filter_map(|v| v.trim().parse::<u64>().ok())
@@ -157,7 +159,10 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
     // 1. If nvidia-smi is available, query exact discrete GPU model and driver
     if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
         "/usr/bin/nvidia-smi",
-        &["--query-gpu=gpu_name,driver_version", "--format=csv,noheader"],
+        &[
+            "--query-gpu=gpu_name,driver_version",
+            "--format=csv,noheader",
+        ],
         &[],
         deadline,
         4096,
@@ -187,59 +192,70 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
     }
     let mut candidates: Vec<GpuCandidate> = Vec::new();
 
-    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
-        "/usr/bin/lspci",
-        &["-mm"],
-        &[],
-        deadline,
-        65536,
-    ) {
+    if let Some(stdout_bytes) =
+        crate::subproc::run_cmd_bounded("/usr/bin/lspci", &["-mm"], &[], deadline, 65536)
+    {
         let stdout = String::from_utf8_lossy(&stdout_bytes);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('"').collect();
             if parts.len() >= 4 {
                 let class = parts[1].trim();
-                    if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
-                        let slot_raw = parts[0].trim();
-                        let slot = if slot_raw.contains(':') { slot_raw } else { "" };
-                        let vendor = parts[3].trim();
-                        let device = if parts.len() >= 6 { parts[5].trim() } else { "" };
-                        let full_name = format!("{} {}", vendor, device).trim().to_string();
+                if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
+                    let slot_raw = parts[0].trim();
+                    let slot = if slot_raw.contains(':') { slot_raw } else { "" };
+                    let vendor = parts[3].trim();
+                    let device = if parts.len() >= 6 {
+                        parts[5].trim()
+                    } else {
+                        ""
+                    };
+                    let full_name = format!("{} {}", vendor, device).trim().to_string();
 
-                        // Detect driver from sysfs for this PCI slot
-                        let mut dev_driver = String::from("drm");
-                        let sysfs_uevent = format!("/sys/bus/pci/devices/0000:{}/uevent", slot);
-                        let alt_uevent = format!("/sys/bus/pci/devices/{}/uevent", slot);
-                        let uevent_content = fs::read_to_string(&sysfs_uevent).or_else(|_| fs::read_to_string(&alt_uevent));
-                        if let Ok(content) = uevent_content {
-                            for uline in content.lines() {
-                                if uline.starts_with("DRIVER=") {
-                                    dev_driver = uline.trim_start_matches("DRIVER=").trim().to_string();
-                                    break;
-                                }
+                    // Detect driver from sysfs for this PCI slot
+                    let mut dev_driver = String::from("drm");
+                    let sysfs_uevent = format!("/sys/bus/pci/devices/0000:{}/uevent", slot);
+                    let alt_uevent = format!("/sys/bus/pci/devices/{}/uevent", slot);
+                    let uevent_content = fs::read_to_string(&sysfs_uevent)
+                        .or_else(|_| fs::read_to_string(&alt_uevent));
+                    if let Ok(content) = uevent_content {
+                        for uline in content.lines() {
+                            if uline.starts_with("DRIVER=") {
+                                dev_driver = uline.trim_start_matches("DRIVER=").trim().to_string();
+                                break;
                             }
                         }
-
-                        let is_discrete = vendor.contains("NVIDIA")
-                            || (vendor.contains("Advanced Micro") && (device.contains("RX ") || device.contains("Radeon Pro")))
-                            || (vendor.contains("Intel") && (device.contains("Arc A") || device.contains("Arc B") || device.contains("Battlemage")));
-
-                        candidates.push(GpuCandidate {
-                            name: full_name,
-                            driver: dev_driver,
-                            is_discrete,
-                        });
                     }
+
+                    let is_discrete = vendor.contains("NVIDIA")
+                        || (vendor.contains("Advanced Micro")
+                            && (device.contains("RX ") || device.contains("Radeon Pro")))
+                        || (vendor.contains("Intel")
+                            && (device.contains("Arc A")
+                                || device.contains("Arc B")
+                                || device.contains("Battlemage")));
+
+                    candidates.push(GpuCandidate {
+                        name: full_name,
+                        driver: dev_driver,
+                        is_discrete,
+                    });
                 }
             }
         }
+    }
 
     if let Some(discrete) = candidates.iter().find(|c| c.is_discrete) {
-        return (clean_string(&discrete.name, 55), clean_string(&discrete.driver, 30));
+        return (
+            clean_string(&discrete.name, 55),
+            clean_string(&discrete.driver, 30),
+        );
     }
 
     if let Some(first) = candidates.first() {
-        return (clean_string(&first.name, 55), clean_string(&first.driver, 30));
+        return (
+            clean_string(&first.name, 55),
+            clean_string(&first.driver, 30),
+        );
     }
 
     // Fallback: DRM sysfs query
@@ -284,25 +300,28 @@ fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
         65536,
     ) {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
-                if let Some(arr) = val.as_array() {
-                    for m in arr {
-                        let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
-                        let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
-                        let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
-                        let refresh_rate = m.get("refreshRate").and_then(|v| v.as_f64()).unwrap_or(60.0);
-                        let scale = m.get("scale").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            if let Some(arr) = val.as_array() {
+                for m in arr {
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
+                    let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
+                    let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
+                    let refresh_rate = m
+                        .get("refreshRate")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(60.0);
+                    let scale = m.get("scale").and_then(|v| v.as_f64()).unwrap_or(1.0);
 
-                        list.push(MonitorInfo {
-                            name: clean_string(name, 20),
-                            width,
-                            height,
-                            refresh_rate: (refresh_rate * 10.0).round() / 10.0,
-                            scale,
-                        });
-                    }
+                    list.push(MonitorInfo {
+                        name: clean_string(name, 20),
+                        width,
+                        height,
+                        refresh_rate: (refresh_rate * 10.0).round() / 10.0,
+                        scale,
+                    });
                 }
             }
         }
+    }
 
     // Fallback if hyprctl returned empty
     if list.is_empty() {
@@ -322,27 +341,30 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     let mut vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor")
         .or_else(|_| fs::read_to_string("/sys/class/dmi/id/sys_vendor"))
         .unwrap_or_else(|_| "Generic".into());
-    vendor = vendor.replace(" Technology Co., Ltd.", "").replace(" Inc.", "").trim().to_string();
+    vendor = vendor
+        .replace(" Technology Co., Ltd.", "")
+        .replace(" Inc.", "")
+        .trim()
+        .to_string();
 
     let mut name = fs::read_to_string("/sys/class/dmi/id/board_name")
         .or_else(|_| fs::read_to_string("/sys/class/dmi/id/product_name"))
         .unwrap_or_else(|_| "Motherboard".into());
     name = name.trim().to_string();
 
-    let bios = fs::read_to_string("/sys/class/dmi/id/bios_version")
-        .unwrap_or_else(|_| "Unknown".into());
+    let bios =
+        fs::read_to_string("/sys/class/dmi/id/bios_version").unwrap_or_else(|_| "Unknown".into());
 
     let mut chipset = String::from("Mainstream Chipset");
-    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
-        "/usr/bin/lspci",
-        &[],
-        &[],
-        deadline,
-        65536,
-    ) {
+    if let Some(stdout_bytes) =
+        crate::subproc::run_cmd_bounded("/usr/bin/lspci", &[], &[], deadline, 65536)
+    {
         let stdout = String::from_utf8_lossy(&stdout_bytes);
         for line in stdout.lines() {
-            if line.contains("ISA bridge:") || line.contains("Host bridge:") || line.contains("SMBus:") {
+            if line.contains("ISA bridge:")
+                || line.contains("Host bridge:")
+                || line.contains("SMBus:")
+            {
                 if let Some(idx) = line.find("Intel Corporation ") {
                     let rest = &line[idx + 18..];
                     if let Some(c_idx) = rest.find(" Chipset") {
@@ -365,7 +387,22 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
                         break;
                     }
                 } else if line.contains("AMD") {
-                    for pat in ["X870E", "X870", "X670E", "X670", "B850", "B650E", "B650", "A620", "X570", "B550", "B450", "Strix Point", "Hawk Point", "Phoenix"] {
+                    for pat in [
+                        "X870E",
+                        "X870",
+                        "X670E",
+                        "X670",
+                        "B850",
+                        "B650E",
+                        "B650",
+                        "A620",
+                        "X570",
+                        "B550",
+                        "B450",
+                        "Strix Point",
+                        "Hawk Point",
+                        "Phoenix",
+                    ] {
                         if line.contains(pat) {
                             chipset = format!("AMD {}", pat);
                             break;
@@ -380,7 +417,10 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     }
 
     if chipset == "Mainstream Chipset" {
-        for pat in ["Z890", "Z790", "B760", "H770", "H610", "X870E", "X870", "X670E", "X670", "B850", "B650", "A620", "Z690", "B660"] {
+        for pat in [
+            "Z890", "Z790", "B760", "H770", "H610", "X870E", "X870", "X670E", "X670", "B850",
+            "B650", "A620", "Z690", "B660",
+        ] {
             if name.contains(pat) {
                 if pat.starts_with('Z') || pat.starts_with('B') || pat.starts_with('H') {
                     chipset = format!("Intel {}", pat);
@@ -404,7 +444,10 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
 /// often carry only an internal part number on laptops, which OmaStat cannot map to a brand.
 fn detect_system() -> (String, String) {
     let read = |f: &str| fs::read_to_string(format!("/sys/class/dmi/id/{}", f)).unwrap_or_default();
-    (clean_string(read("sys_vendor").trim(), 40), clean_string(read("product_name").trim(), 50))
+    (
+        clean_string(read("sys_vendor").trim(), 40),
+        clean_string(read("product_name").trim(), 50),
+    )
 }
 
 fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
@@ -421,41 +464,44 @@ fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
         65536,
     ) {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
-                if let Some(arr) = val.as_array() {
-                    for section in arr {
-                        if let Some(obj) = section.as_object() {
-                            for (k, v) in obj {
-                                if k.contains("Memory") {
-                                    if let Some(mem_items) = v.as_array() {
-                                        for item in mem_items {
-                                            if let Some(iobj) = item.as_object() {
-                                                for (ik, iv) in iobj {
-                                                    if ik.contains("type") {
-                                                        if let Some(s) = iv.as_str() {
-                                                            if s.starts_with("DDR") || s.starts_with("LPDDR") {
-                                                                ram_type = s.to_string();
+            if let Some(arr) = val.as_array() {
+                for section in arr {
+                    if let Some(obj) = section.as_object() {
+                        for (k, v) in obj {
+                            if k.contains("Memory") {
+                                if let Some(mem_items) = v.as_array() {
+                                    for item in mem_items {
+                                        if let Some(iobj) = item.as_object() {
+                                            for (ik, iv) in iobj {
+                                                if ik.contains("type") {
+                                                    if let Some(s) = iv.as_str() {
+                                                        if s.starts_with("DDR")
+                                                            || s.starts_with("LPDDR")
+                                                        {
+                                                            ram_type = s.to_string();
+                                                        }
+                                                    }
+                                                }
+                                                if ik.contains("speed") {
+                                                    if let Some(s) = iv.as_str() {
+                                                        if let Some(mts) =
+                                                            s.split_whitespace().next()
+                                                        {
+                                                            if let Ok(spd) = mts.parse::<u32>() {
+                                                                speed_mts = spd;
                                                             }
                                                         }
                                                     }
-                                                    if ik.contains("speed") {
-                                                        if let Some(s) = iv.as_str() {
-                                                            if let Some(mts) = s.split_whitespace().next() {
-                                                                if let Ok(spd) = mts.parse::<u32>() {
-                                                                    speed_mts = spd;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if ik.contains("Device") {
-                                                        modules += 1;
-                                                    }
-                                                    if ik.contains("slots") {
-                                                        if let Some(s) = iv.as_u64() {
-                                                            slots = s as usize;
-                                                        } else if let Some(s) = iv.as_str() {
-                                                            if let Ok(sl) = s.parse::<usize>() {
-                                                                slots = sl;
-                                                            }
+                                                }
+                                                if ik.contains("Device") {
+                                                    modules += 1;
+                                                }
+                                                if ik.contains("slots") {
+                                                    if let Some(s) = iv.as_u64() {
+                                                        slots = s as usize;
+                                                    } else if let Some(s) = iv.as_str() {
+                                                        if let Ok(sl) = s.parse::<usize>() {
+                                                            slots = sl;
                                                         }
                                                     }
                                                 }
@@ -469,6 +515,7 @@ fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
                 }
             }
         }
+    }
 
     if modules == 0 {
         modules = 2;
@@ -490,17 +537,26 @@ fn detect_storage() -> (String, String) {
                     storage_model = clean_string(m.trim(), 40);
                     break;
                 }
-            } else if (name.starts_with("sd") || name.starts_with("vd")) && storage_model == "Solid State Drive" {
+            } else if (name.starts_with("sd") || name.starts_with("vd"))
+                && storage_model == "Solid State Drive"
+            {
                 // Skip USB sticks / card readers
-                let removable = fs::read_to_string(format!("/sys/block/{}/removable", name)).unwrap_or_default();
+                let removable = fs::read_to_string(format!("/sys/block/{}/removable", name))
+                    .unwrap_or_default();
                 if removable.trim() == "1" {
                     continue;
                 }
                 let model_path = format!("/sys/block/{}/device/model", name);
                 if let Ok(m) = fs::read_to_string(&model_path) {
                     storage_model = clean_string(m.trim(), 40);
-                    let rotational = fs::read_to_string(format!("/sys/block/{}/queue/rotational", name)).unwrap_or_default();
-                    storage_type = if rotational.trim() == "1" { "HDD".to_string() } else { "SATA SSD".to_string() };
+                    let rotational =
+                        fs::read_to_string(format!("/sys/block/{}/queue/rotational", name))
+                            .unwrap_or_default();
+                    storage_type = if rotational.trim() == "1" {
+                        "HDD".to_string()
+                    } else {
+                        "SATA SSD".to_string()
+                    };
                 }
             }
         }
@@ -538,9 +594,17 @@ mod tests {
 pub fn clean_string(s: &str, max_len: usize) -> String {
     let sanitized: String = s
         .chars()
-        .filter(|c| !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\'')
+        .filter(|c| {
+            !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\''
+        })
         .collect();
     // Truncate by characters: byte slicing panics inside multi-byte text such as
     // "Intel® Core™" or a localized PRETTY_NAME, and release builds use panic=abort.
-    sanitized.trim().chars().take(max_len).collect::<String>().trim_end().to_string()
+    sanitized
+        .trim()
+        .chars()
+        .take(max_len)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
 }

@@ -140,7 +140,8 @@ pub fn run_cmd_bounded(
         }
 
         let now = Instant::now();
-        let remaining_ms = (deadline.saturating_duration_since(now).as_millis().min(50) as i32).max(1);
+        let remaining_ms =
+            (deadline.saturating_duration_since(now).as_millis().min(50) as i32).max(1);
         let mut pfd = PollFd {
             fd: raw_fd,
             events: POLLIN | POLLHUP | POLLERR,

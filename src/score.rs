@@ -30,7 +30,12 @@ pub struct OmaRankResult {
 
 pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
     let cpu_score = score_cpu(hw.cpu_cores, hw.cpu_threads, hw.cpu_mhz);
-    let ram_score = score_ram(hw.ram_total_gb, &hw.ram_type, hw.ram_speed_mts, hw.ram_modules);
+    let ram_score = score_ram(
+        hw.ram_total_gb,
+        &hw.ram_type,
+        hw.ram_speed_mts,
+        hw.ram_modules,
+    );
     let mobo_score = score_mobo(&hw.chipset, &hw.mobo_name);
     let gpu_score = score_gpu(&hw.gpu_name, &hw.gpu_driver);
     let display_score = score_display(&hw.monitors);
@@ -51,10 +56,14 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
     let hw_seed = calculate_hw_seed(hw);
     let global_rank = calculate_global_rank(total_score, hw_seed, total_machines);
 
-    let (tier_name, tier_icon, tier_nerd_icon, tier_quote, tier_color, _) = get_rank_tier(total_score);
+    let (tier_name, tier_icon, tier_nerd_icon, tier_quote, tier_color, _) =
+        get_rank_tier(total_score);
 
     let pct = (global_rank as f64 / total_machines as f64) * 100.0;
-    let percentile_text = format!("Top {:.1}% (#{} of {} machines globally)", pct, global_rank, total_machines);
+    let percentile_text = format!(
+        "Top {:.1}% (#{} of {} machines globally)",
+        pct, global_rank, total_machines
+    );
 
     let battlestation_id = generate_local_battlestation_id();
     let archetype_signature = generate_archetype_signature(hw);
@@ -198,20 +207,58 @@ fn score_gpu(name: &str, driver: &str) -> u32 {
         100
     } else if n.contains("5080") || n.contains("4090") {
         99
-    } else if n.contains("5070 ti") || n.contains("4080 super") || n.contains("4080") || n.contains("7900 xtx") {
+    } else if n.contains("5070 ti")
+        || n.contains("4080 super")
+        || n.contains("4080")
+        || n.contains("7900 xtx")
+    {
         95
-    } else if n.contains("5070") || n.contains("4070 ti super") || n.contains("4070 ti") || n.contains("7900 xt") || n.contains("8800 xt") || n.contains("9070 xt") {
+    } else if n.contains("5070")
+        || n.contains("4070 ti super")
+        || n.contains("4070 ti")
+        || n.contains("7900 xt")
+        || n.contains("8800 xt")
+        || n.contains("9070 xt")
+    {
         90
-    } else if n.contains("4070 super") || n.contains("4070") || n.contains("7800 xt") || n.contains("3090") || n.contains("6950") || n.contains("9070") {
+    } else if n.contains("4070 super")
+        || n.contains("4070")
+        || n.contains("7800 xt")
+        || n.contains("3090")
+        || n.contains("6950")
+        || n.contains("9070")
+    {
         86
     // Intel Battlemage discrete GPUs & mid-high GPUs
-    } else if n.contains("b580") || n.contains("battlemage") || n.contains("5060 ti") || n.contains("4060 ti") || n.contains("7700 xt") || n.contains("3080") {
+    } else if n.contains("b580")
+        || n.contains("battlemage")
+        || n.contains("5060 ti")
+        || n.contains("4060 ti")
+        || n.contains("7700 xt")
+        || n.contains("3080")
+    {
         82
-    } else if n.contains("b570") || n.contains("5060") || n.contains("9060 xt") || n.contains("4060") || n.contains("3070") || n.contains("7600 xt") {
+    } else if n.contains("b570")
+        || n.contains("5060")
+        || n.contains("9060 xt")
+        || n.contains("4060")
+        || n.contains("3070")
+        || n.contains("7600 xt")
+    {
         76
-    } else if n.contains("a770") || n.contains("a750") || n.contains("3060") || n.contains("6600") || n.contains("2070") {
+    } else if n.contains("a770")
+        || n.contains("a750")
+        || n.contains("3060")
+        || n.contains("6600")
+        || n.contains("2070")
+    {
         68
-    } else if n.contains("3050") || n.contains("2060") || n.contains("1660") || n.contains("rx 580") || n.contains("rx 570") {
+    } else if n.contains("3050")
+        || n.contains("2060")
+        || n.contains("1660")
+        || n.contains("rx 580")
+        || n.contains("rx 570")
+    {
         50
     } else if n.contains("1060") || n.contains("1050") || n.contains("gtx 970") {
         40
@@ -291,22 +338,70 @@ fn score_mobo(chipset: &str, mobo_name: &str) -> u32 {
     let mut s: f64 = 70.0;
 
     // Chipset tiers
-    if c.contains("Z890") || c.contains("Z790") || c.contains("X870E") || c.contains("X670E") || c.contains("TRX40") || c.contains("WRX80") {
+    if c.contains("Z890")
+        || c.contains("Z790")
+        || c.contains("X870E")
+        || c.contains("X670E")
+        || c.contains("TRX40")
+        || c.contains("WRX80")
+    {
         s = 94.0;
-    } else if c.contains("B850") || c.contains("X870") || c.contains("B760") || c.contains("B650E") || c.contains("B650") || c.contains("Z690") || c.contains("X570") || c.contains("Z590") || c.contains("ARROW LAKE") || c.contains("LUNAR LAKE") || c.contains("METEOR LAKE") || c.contains("STRIX POINT") {
+    } else if c.contains("B850")
+        || c.contains("X870")
+        || c.contains("B760")
+        || c.contains("B650E")
+        || c.contains("B650")
+        || c.contains("Z690")
+        || c.contains("X570")
+        || c.contains("Z590")
+        || c.contains("ARROW LAKE")
+        || c.contains("LUNAR LAKE")
+        || c.contains("METEOR LAKE")
+        || c.contains("STRIX POINT")
+    {
         s = 86.0;
-    } else if c.contains("B660") || c.contains("B550") || c.contains("B450") || c.contains("H670") || c.contains("H770") || c.contains("A620") || c.contains("RAPTOR LAKE") || c.contains("ALDER LAKE") || c.contains("HAWK POINT") || c.contains("PHOENIX") {
+    } else if c.contains("B660")
+        || c.contains("B550")
+        || c.contains("B450")
+        || c.contains("H670")
+        || c.contains("H770")
+        || c.contains("A620")
+        || c.contains("RAPTOR LAKE")
+        || c.contains("ALDER LAKE")
+        || c.contains("HAWK POINT")
+        || c.contains("PHOENIX")
+    {
         s = 78.0;
-    } else if c.contains("H610") || c.contains("H510") || c.contains("A520") || c.contains("A320") || c.contains("H410") || c.contains("H310") {
+    } else if c.contains("H610")
+        || c.contains("H510")
+        || c.contains("A520")
+        || c.contains("A320")
+        || c.contains("H410")
+        || c.contains("H310")
+    {
         s = 62.0;
     } else if c.contains("H81") || c.contains("H61") || c.contains("B75") || c.contains("G41") {
         s = 45.0;
     }
 
     // Board line enthusiast bonus
-    if m.contains("godlike") || m.contains("dark hero") || m.contains("apex") || m.contains("aorus master") || m.contains("taichi") || m.contains("proart") {
+    if m.contains("godlike")
+        || m.contains("dark hero")
+        || m.contains("apex")
+        || m.contains("aorus master")
+        || m.contains("taichi")
+        || m.contains("proart")
+    {
         s += 5.0;
-    } else if m.contains("aorus") || m.contains("rog") || m.contains("strix") || m.contains("tomahawk") || m.contains("tuf") || m.contains("steel legend") || m.contains("gaming x") || m.contains("ds3h") {
+    } else if m.contains("aorus")
+        || m.contains("rog")
+        || m.contains("strix")
+        || m.contains("tomahawk")
+        || m.contains("tuf")
+        || m.contains("steel legend")
+        || m.contains("gaming x")
+        || m.contains("ds3h")
+    {
         s += 2.0;
     }
 
@@ -318,19 +413,47 @@ fn score_storage(storage_type: &str, storage_model: &str) -> u32 {
     let m = storage_model.to_lowercase();
 
     // Top tier NVMe Gen5 & Gen4 flagship drives
-    if m.contains("990 pro") || m.contains("980 pro") || m.contains("sn850x") || m.contains("sn850") || m.contains("t700") || m.contains("t705") || m.contains("kc3000") || m.contains("firecuda 530") || m.contains("nm790") || m.contains("p44 pro") || m.contains("platinum p41") {
+    if m.contains("990 pro")
+        || m.contains("980 pro")
+        || m.contains("sn850x")
+        || m.contains("sn850")
+        || m.contains("t700")
+        || m.contains("t705")
+        || m.contains("kc3000")
+        || m.contains("firecuda 530")
+        || m.contains("nm790")
+        || m.contains("p44 pro")
+        || m.contains("platinum p41")
+    {
         96
     // High-performance mainstream NVMe
-    } else if m.contains("970 evo") || m.contains("sn770") || m.contains("sn750") || m.contains("gold p31") || m.contains("mp600") || m.contains("crucial p5") || m.contains("legend 960") || m.contains("sn580") {
+    } else if m.contains("970 evo")
+        || m.contains("sn770")
+        || m.contains("sn750")
+        || m.contains("gold p31")
+        || m.contains("mp600")
+        || m.contains("crucial p5")
+        || m.contains("legend 960")
+        || m.contains("sn580")
+    {
         88
     // Value NVMe
-    } else if m.contains("nv2") || m.contains("p3") || m.contains("sn570") || m.contains("intel 660p") || m.contains("intel 670p") {
+    } else if m.contains("nv2")
+        || m.contains("p3")
+        || m.contains("sn570")
+        || m.contains("intel 660p")
+        || m.contains("intel 670p")
+    {
         80
     // General NVMe detection
     } else if t.contains("nvme") || t.contains("pcie") {
         85
     // SATA SSD
-    } else if t.contains("ssd") || m.contains("870 evo") || m.contains("mx500") || m.contains("bx500") {
+    } else if t.contains("ssd")
+        || m.contains("870 evo")
+        || m.contains("mx500")
+        || m.contains("bx500")
+    {
         68
     // Mechanical HDD
     } else if t.contains("hdd") || t.contains("hard disk") {
@@ -362,7 +485,8 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Cyberpunk Beast".to_string(),
             "".to_string(),
             "".to_string(),
-            "High-refresh DSC + heavy silicon. Wayland animations glide like liquid butter.".to_string(),
+            "High-refresh DSC + heavy silicon. Wayland animations glide like liquid butter."
+                .to_string(),
             "#38bdf8".to_string(),
             "Top 15% enthusiast battlestation tier.".to_string(),
         ),
@@ -378,7 +502,8 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Honest Daily Driver".to_string(),
             "".to_string(),
             "".to_string(),
-            "Reliable workhorse. Won't break records, won't break a sweat. Perfectly balanced.".to_string(),
+            "Reliable workhorse. Won't break records, won't break a sweat. Perfectly balanced."
+                .to_string(),
             "#eab308".to_string(),
             "Balanced middle 50% community baseline.".to_string(),
         ),
@@ -386,7 +511,8 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Budget Warrior".to_string(),
             "".to_string(),
             "".to_string(),
-            "Proud veteran silicon. Smooth in 720p, doubles as a space heater on 1080p60.".to_string(),
+            "Proud veteran silicon. Smooth in 720p, doubles as a space heater on 1080p60."
+                .to_string(),
             "#f97316".to_string(),
             "Lightweight terminal & efficiency tier.".to_string(),
         ),
@@ -394,7 +520,8 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Study Mode Only".to_string(),
             "".to_string(),
             "".to_string(),
-            "Fans are quiet as long as you only open LibreOffice and htop. Don't push your luck.".to_string(),
+            "Fans are quiet as long as you only open LibreOffice and htop. Don't push your luck."
+                .to_string(),
             "#ef4444".to_string(),
             "Ultra-minimalist low-power tier.".to_string(),
         ),
@@ -402,7 +529,8 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
             "Potato Toaster".to_string(),
             "".to_string(),
             "".to_string(),
-            "You installed Arch on a microwave. The cooling fans are screaming for mercy.".to_string(),
+            "You installed Arch on a microwave. The cooling fans are screaming for mercy."
+                .to_string(),
             "#94a3b8".to_string(),
             "Potato tier: Time to check your local PC parts flea market!".to_string(),
         ),
@@ -411,7 +539,12 @@ fn get_rank_tier(score: u32) -> (String, String, String, String, String, String)
 
 fn calculate_hw_seed(hw: &HardwareInfo) -> u64 {
     let mut hash: u64 = 5381;
-    for b in hw.cpu_name.bytes().chain(hw.gpu_name.bytes()).chain(hw.storage_type.bytes()) {
+    for b in hw
+        .cpu_name
+        .bytes()
+        .chain(hw.gpu_name.bytes())
+        .chain(hw.storage_type.bytes())
+    {
         hash = hash.wrapping_mul(33).wrapping_add(b as u64);
     }
     hash
@@ -508,7 +641,11 @@ fn generate_archetype_signature(hw: &HardwareInfo) -> String {
     };
 
     let ram_gb = (hw.ram_total_gb.round() as u32).to_string();
-    let hz = hw.monitors.first().map(|m| format!("{:.0}H", m.refresh_rate)).unwrap_or_else(|| "60H".into());
+    let hz = hw
+        .monitors
+        .first()
+        .map(|m| format!("{:.0}H", m.refresh_rate))
+        .unwrap_or_else(|| "60H".into());
 
     format!("OMA-{}-{}-{}G-{}", cpu_part, gpu_part, ram_gb, hz)
 }
@@ -523,9 +660,18 @@ mod tests {
         let ddr4_score = score_ram(64.0, "DDR4", 3200, 2);
         let ddr3_score = score_ram(16.0, "DDR3", 1600, 2);
 
-        assert!(ddr5_score > ddr4_score, "DDR5 should score higher than DDR4");
-        assert!(ddr4_score > ddr3_score, "DDR4 should score higher than DDR3");
-        assert_eq!(ddr4_score, 90, "User 64GB DDR4-3200 should score exactly 90");
+        assert!(
+            ddr5_score > ddr4_score,
+            "DDR5 should score higher than DDR4"
+        );
+        assert!(
+            ddr4_score > ddr3_score,
+            "DDR4 should score higher than DDR3"
+        );
+        assert_eq!(
+            ddr4_score, 90,
+            "User 64GB DDR4-3200 should score exactly 90"
+        );
     }
 
     #[test]
@@ -581,4 +727,3 @@ mod tests {
         assert_eq!(nerd_icon, "");
     }
 }
-

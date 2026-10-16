@@ -161,7 +161,10 @@ pub fn save_survey_state_to_path(state: &SurveyState, p: &std::path::Path) {
 
         // Pre-check target path if it already exists
         if let Ok(meta) = fs::symlink_metadata(p) {
-            if meta.file_type().is_symlink() || !meta.file_type().is_file() || meta.uid() != current_uid {
+            if meta.file_type().is_symlink()
+                || !meta.file_type().is_file()
+                || meta.uid() != current_uid
+            {
                 return;
             }
         }
@@ -195,7 +198,8 @@ pub fn save_survey_state_to_path(state: &SurveyState, p: &std::path::Path) {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0);
             let seq = STAGING_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let candidate = parent.join(format!(".tmp_survey_state_{}_{}_{}.json", pid, nanos, seq));
+            let candidate =
+                parent.join(format!(".tmp_survey_state_{}_{}_{}.json", pid, nanos, seq));
 
             let mut opts = fs::OpenOptions::new();
             opts.write(true)
@@ -247,7 +251,10 @@ pub fn save_survey_state_to_path(state: &SurveyState, p: &std::path::Path) {
 
         // Re-verify target path prior to atomic rename to prevent TOCTOU symlink redirection
         if let Ok(meta) = fs::symlink_metadata(p) {
-            if meta.file_type().is_symlink() || !meta.file_type().is_file() || meta.uid() != current_uid {
+            if meta.file_type().is_symlink()
+                || !meta.file_type().is_file()
+                || meta.uid() != current_uid
+            {
                 return;
             }
         }
@@ -309,11 +316,16 @@ fn post_survey(endpoint: &str, json_data: &str, max_time_secs: u64) -> Result<()
         &[
             "-s",
             "-S",
-            "--max-time", &max_time,
-            "-X", "POST",
-            "-H", "Content-Type: application/json",
-            "-H", "User-Agent: OmaRank-Engine/1.0",
-            "-d", json_data,
+            "--max-time",
+            &max_time,
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-H",
+            "User-Agent: OmaRank-Engine/1.0",
+            "-d",
+            json_data,
             endpoint,
         ],
         &[],
@@ -327,7 +339,10 @@ fn post_survey(endpoint: &str, json_data: &str, max_time_secs: u64) -> Result<()
     if resp.get("success").and_then(|v| v.as_bool()) == Some(true) {
         Ok(())
     } else {
-        let reason = resp.get("error").and_then(|v| v.as_str()).unwrap_or("rejected by server");
+        let reason = resp
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("rejected by server");
         Err(crate::hardware::clean_string(reason, 80))
     }
 }
@@ -353,9 +368,15 @@ pub fn submit_to_omastat(result: &OmaRankResult) -> (bool, String) {
             state.last_submitted_epoch = payload.timestamp_epoch;
             state.last_score = result.total_score;
             save_survey_state(&state);
-            (true, "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string())
+            (
+                true,
+                "Successfully submitted anonymous hardware profile to OmaStat survey!".to_string(),
+            )
         }
-        Err(reason) => (false, format!("Survey not submitted ({}). Please try again later.", reason)),
+        Err(reason) => (
+            false,
+            format!("Survey not submitted ({}). Please try again later.", reason),
+        ),
     }
 }
 
@@ -381,10 +402,18 @@ mod tests {
         {
             use std::os::unix::fs::MetadataExt;
             let meta = fs::metadata(&state_path).expect("State file should exist");
-            assert_eq!(meta.mode() & 0o777, 0o600, "File permissions must be strictly 0600");
+            assert_eq!(
+                meta.mode() & 0o777,
+                0o600,
+                "File permissions must be strictly 0600"
+            );
 
             let parent_meta = fs::metadata(&temp_dir).expect("Parent dir should exist");
-            assert_eq!(parent_meta.mode() & 0o777, 0o700, "Directory permissions must be 0700");
+            assert_eq!(
+                parent_meta.mode() & 0o777,
+                0o700,
+                "Directory permissions must be 0700"
+            );
         }
 
         let loaded = load_survey_state_from_path(&state_path);
@@ -396,7 +425,8 @@ mod tests {
 
     #[test]
     fn test_symlink_rejection_on_state_file() {
-        let temp_dir = std::env::temp_dir().join(format!("omarank_symlink_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("omarank_symlink_test_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
         let real_file = temp_dir.join("real.json");
         let symlink_path = temp_dir.join("survey_state.json");
@@ -408,7 +438,11 @@ mod tests {
         }
 
         let state = load_survey_state_from_path(&symlink_path);
-        assert_eq!(state, SurveyState::default(), "Symlink must be rejected on load");
+        assert_eq!(
+            state,
+            SurveyState::default(),
+            "Symlink must be rejected on load"
+        );
 
         let test_state = SurveyState {
             has_opted_in: true,
@@ -427,7 +461,8 @@ mod tests {
 
     #[test]
     fn test_symlink_rejection_on_parent_dir() {
-        let root_temp = std::env::temp_dir().join(format!("omarank_parent_sym_root_{}", std::process::id()));
+        let root_temp =
+            std::env::temp_dir().join(format!("omarank_parent_sym_root_{}", std::process::id()));
         let _ = fs::create_dir_all(&root_temp);
         let real_parent = root_temp.join("real_dir");
         let symlink_parent = root_temp.join("symlink_dir");
@@ -449,7 +484,10 @@ mod tests {
 
         // Target file must not have been created through the symlinked parent
         let real_target = real_parent.join("survey_state.json");
-        assert!(!real_target.exists(), "Write through symlinked parent directory must be rejected");
+        assert!(
+            !real_target.exists(),
+            "Write through symlinked parent directory must be rejected"
+        );
 
         let _ = fs::remove_file(&symlink_parent);
         let _ = fs::remove_dir_all(&real_parent);
@@ -458,7 +496,8 @@ mod tests {
 
     #[test]
     fn test_preplanted_tmp_symlink_rejection() {
-        let temp_dir = std::env::temp_dir().join(format!("omarank_preplant_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("omarank_preplant_test_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
         let victim_file = temp_dir.join("victim.txt");
         let _ = fs::write(&victim_file, "PRESERVED_CONTENT");
@@ -466,7 +505,10 @@ mod tests {
         let state_path = temp_dir.join("survey_state.json");
 
         // Plant a symlink matching a staging pattern in the directory
-        let planted_symlink = temp_dir.join(format!(".tmp_survey_state_{}_planted.json", std::process::id()));
+        let planted_symlink = temp_dir.join(format!(
+            ".tmp_survey_state_{}_planted.json",
+            std::process::id()
+        ));
         #[cfg(unix)]
         {
             let _ = std::os::unix::fs::symlink(&victim_file, &planted_symlink);
@@ -482,7 +524,10 @@ mod tests {
 
         // Check victim file was not touched
         let victim_content = fs::read_to_string(&victim_file).unwrap_or_default();
-        assert_eq!(victim_content, "PRESERVED_CONTENT", "Victim file pointed by symlink must remain untouched");
+        assert_eq!(
+            victim_content, "PRESERVED_CONTENT",
+            "Victim file pointed by symlink must remain untouched"
+        );
 
         // The legitimate state file should still be saved safely
         let loaded = load_survey_state_from_path(&state_path);
