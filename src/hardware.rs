@@ -729,6 +729,24 @@ fn detect_os() -> String {
     "Omarchy Linux".to_string()
 }
 
+pub fn clean_string(s: &str, max_len: usize) -> String {
+    let sanitized: String = s
+        .chars()
+        .filter(|c| {
+            !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\''
+        })
+        .collect();
+    // Truncate by characters: byte slicing panics inside multi-byte text such as
+    // "Intel® Core™" or a localized PRETTY_NAME, and release builds use panic=abort.
+    sanitized
+        .trim()
+        .chars()
+        .take(max_len)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,22 +872,4 @@ mod tests {
         assert_eq!(clean_string("Omarchy Türkçe Sürüm", 9), "Omarchy T");
         assert_eq!(clean_string("  <b>\"x\"</b> ", 10), "bx/b");
     }
-}
-
-pub fn clean_string(s: &str, max_len: usize) -> String {
-    let sanitized: String = s
-        .chars()
-        .filter(|c| {
-            !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\''
-        })
-        .collect();
-    // Truncate by characters: byte slicing panics inside multi-byte text such as
-    // "Intel® Core™" or a localized PRETTY_NAME, and release builds use panic=abort.
-    sanitized
-        .trim()
-        .chars()
-        .take(max_len)
-        .collect::<String>()
-        .trim_end()
-        .to_string()
 }
