@@ -197,6 +197,56 @@ fn score_ram(gb: f64, ram_type: &str, speed_mts: u32, modules: usize) -> u32 {
     (s.round() as u32).clamp(5, 100)
 }
 
+/// One row of the discrete GPU table: any lowercase substring in `match` selects `score`.
+#[derive(Debug, Clone, Deserialize)]
+struct GpuScoreRow {
+    #[serde(rename = "match")]
+    patterns: Vec<String>,
+    score: u32,
+}
+
+const BUILTIN_GPU_SCORES: &str = include_str!("gpu_scores.json");
+
+fn parse_gpu_table(json: &str) -> Option<Vec<GpuScoreRow>> {
+    let mut rows: Vec<GpuScoreRow> = serde_json::from_str(json).ok()?;
+    if rows.is_empty() {
+        return None;
+    }
+    for row in &mut rows {
+        row.score = row.score.min(100);
+        row.patterns = row
+            .patterns
+            .iter()
+            .map(|p| p.trim().to_lowercase())
+            .filter(|p| !p.is_empty())
+            .collect();
+    }
+    Some(rows)
+}
+
+/// User override: `$XDG_CONFIG_HOME/omarank/gpu_scores.json` (or `~/.config/omarank/...`).
+/// It must be a regular, non-symlink file owned by us, under 64 KiB, and parse cleanly;
+/// otherwise the table embedded at build time is used.
+fn load_user_gpu_table() -> Option<Vec<GpuScoreRow>> {
+    let path = crate::securefs::xdg_path("XDG_CONFIG_HOME", ".config", "gpu_scores.json")?;
+    let content = crate::securefs::read_owned_file(&path, 64 * 1024)?;
+    parse_gpu_table(&content)
+}
+
+fn gpu_table() -> &'static [GpuScoreRow] {
+    static TABLE: std::sync::OnceLock<Vec<GpuScoreRow>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        // Unit tests must not depend on whatever the developer has in ~/.config
+        let user = if cfg!(test) {
+            None
+        } else {
+            load_user_gpu_table()
+        };
+        user.or_else(|| parse_gpu_table(BUILTIN_GPU_SCORES))
+            .unwrap_or_default()
+    })
+}
+
 /// Integrated GPU classes by codename / marketing name as lspci reports them.
 /// Returns None when nothing iGPU-specific is recognised.
 fn integrated_gpu_class(n: &str) -> Option<u32> {
@@ -262,66 +312,13 @@ fn score_gpu(name: &str, driver: &str, integrated: bool) -> u32 {
         return score_integrated_gpu(&n, &d);
     }
 
-    // Top tier NVIDIA / AMD Flagships (Next-Gen & Current Titans)
-    if n.contains("5090") {
-        100
-    } else if n.contains("5080") || n.contains("4090") {
-        99
-    } else if n.contains("5070 ti")
-        || n.contains("4080 super")
-        || n.contains("4080")
-        || n.contains("7900 xtx")
+    // Discrete cards: first matching row of the (overridable) score table wins
+    if let Some(score) = gpu_table()
+        .iter()
+        .find(|row| row.patterns.iter().any(|p| n.contains(p.as_str())))
+        .map(|row| row.score)
     {
-        95
-    } else if n.contains("5070")
-        || n.contains("4070 ti super")
-        || n.contains("4070 ti")
-        || n.contains("7900 xt")
-        || n.contains("8800 xt")
-        || n.contains("9070 xt")
-    {
-        90
-    } else if n.contains("4070 super")
-        || n.contains("4070")
-        || n.contains("7800 xt")
-        || n.contains("3090")
-        || n.contains("6950")
-        || n.contains("9070")
-    {
-        86
-    // Intel Battlemage discrete GPUs & mid-high GPUs
-    } else if n.contains("b580")
-        || n.contains("battlemage")
-        || n.contains("5060 ti")
-        || n.contains("4060 ti")
-        || n.contains("7700 xt")
-        || n.contains("3080")
-    {
-        82
-    } else if n.contains("b570")
-        || n.contains("5060")
-        || n.contains("9060 xt")
-        || n.contains("4060")
-        || n.contains("3070")
-        || n.contains("7600 xt")
-    {
-        76
-    } else if n.contains("a770")
-        || n.contains("a750")
-        || n.contains("3060")
-        || n.contains("6600")
-        || n.contains("2070")
-    {
-        68
-    } else if n.contains("3050")
-        || n.contains("2060")
-        || n.contains("1660")
-        || n.contains("rx 580")
-        || n.contains("rx 570")
-    {
-        50
-    } else if n.contains("1060") || n.contains("1050") || n.contains("gtx 970") {
-        40
+        score
     // Integrated GPU names that slipped through detection without the integrated flag
     } else if let Some(class) = integrated_gpu_class(&n) {
         class
@@ -874,6 +871,20 @@ mod tests {
             score_gpu("NVIDIA Quadro Mystery", "nvidia 550.54", false),
             70
         );
+    }
+
+    #[test]
+    fn test_gpu_table_parsing() {
+        let builtin = parse_gpu_table(BUILTIN_GPU_SCORES).expect("embedded table must parse");
+        assert_eq!(builtin[0].patterns, vec!["5090"]);
+        assert_eq!(builtin[0].score, 100);
+
+        let custom = parse_gpu_table(r#"[{"match": [" RTX 9999 "], "score": 250}]"#).unwrap();
+        assert_eq!(custom[0].patterns, vec!["rtx 9999"]);
+        assert_eq!(custom[0].score, 100, "scores are capped at 100");
+
+        assert!(parse_gpu_table("[]").is_none());
+        assert!(parse_gpu_table("{\"match\": 1}").is_none());
     }
 
     #[test]

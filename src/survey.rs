@@ -63,60 +63,9 @@ pub fn load_survey_state() -> SurveyState {
 }
 
 pub fn load_survey_state_from_path(p: &std::path::Path) -> SurveyState {
-    #[cfg(unix)]
-    {
-        use std::io::Read;
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-
-        if let Ok(meta) = fs::symlink_metadata(p) {
-            if meta.file_type().is_symlink() || !meta.file_type().is_file() {
-                return SurveyState::default();
-            }
-            // SAFETY: getuid is a POSIX libc function without side effects
-            let current_uid = unsafe { getuid() };
-            if meta.uid() != current_uid {
-                return SurveyState::default();
-            }
-        } else {
-            return SurveyState::default();
-        }
-
-        // Open directly with O_NOFOLLOW descriptor binding to prevent TOCTOU symlink race
-        let mut opts = fs::OpenOptions::new();
-        opts.read(true).custom_flags(O_NOFOLLOW);
-
-        if let Ok(f) = opts.open(p) {
-            if let Ok(meta) = f.metadata() {
-                if !meta.file_type().is_file() {
-                    return SurveyState::default();
-                }
-                // SAFETY: getuid is a POSIX libc function without side effects
-                let current_uid = unsafe { getuid() };
-                if meta.uid() != current_uid {
-                    return SurveyState::default();
-                }
-
-                let mut content = String::new();
-                // Bounded read (64 KiB cap) to prevent memory exhaustion
-                if f.take(65536).read_to_string(&mut content).is_ok() {
-                    if let Ok(state) = serde_json::from_str::<SurveyState>(&content) {
-                        return state;
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(not(unix))]
-    {
-        if let Ok(content) = fs::read_to_string(p) {
-            if let Ok(state) = serde_json::from_str::<SurveyState>(&content) {
-                return state;
-            }
-        }
-    }
-
-    SurveyState::default()
+    crate::securefs::read_owned_file(p, 65536)
+        .and_then(|content| serde_json::from_str::<SurveyState>(&content).ok())
+        .unwrap_or_default()
 }
 
 pub fn save_survey_state(state: &SurveyState) {

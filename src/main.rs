@@ -1,5 +1,6 @@
 mod hardware;
 mod score;
+mod securefs;
 pub mod subproc;
 mod survey;
 
