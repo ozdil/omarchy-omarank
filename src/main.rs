@@ -1,4 +1,5 @@
 mod hardware;
+mod rank;
 mod score;
 mod securefs;
 pub mod subproc;
@@ -12,14 +13,21 @@ fn main() {
     // --rescan ignores and rewrites the hardware cache, then behaves like --json
     let rescan = args.iter().any(|a| a == "--rescan");
     let hw = hardware::detect_hardware_cached(rescan);
-    let result = score::calculate_score(&hw);
+    let mut result = score::calculate_score(&hw);
 
-    if rescan || args.iter().any(|a| a == "--json") {
+    // The real OmaStat rank (opt-in only) may be fetched for the interactive views; the
+    // ladder and survey paths only use a cached rank.
+    let is_json = rescan || args.iter().any(|a| a == "--json");
+    let is_status = args.iter().any(|a| a == "--status");
+    let is_default_view = !args.iter().skip(1).any(|a| a.starts_with("--"));
+    rank::apply_world_rank(&mut result, is_json || is_status || is_default_view);
+
+    if is_json {
         print_json(&result);
         return;
     }
 
-    if args.iter().any(|a| a == "--status") {
+    if is_status {
         print_bar_status(&result);
         return;
     }
@@ -111,10 +119,17 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
         "  \x1b[1;34m RANK TIER:\x1b[0m           {} \x1b[1;37m{}\x1b[0m",
         res.tier_nerd_icon, res.tier_name
     );
-    println!(
-        "  \x1b[1;36m󰩠 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} battlestations ({})",
-        res.global_rank, res.total_machines, res.percentile_text
-    );
+    if res.rank_is_estimate {
+        println!(
+            "  \x1b[1;36m󰩠 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;33m~#{}\x1b[0m ({})",
+            res.global_rank, res.percentile_text
+        );
+    } else {
+        println!(
+            "  \x1b[1;36m󰩠 OMASTAT WORLD RANK:\x1b[0m  \x1b[1;32m#{}\x1b[0m of {} submissions ({})",
+            res.global_rank, res.total_machines, res.percentile_text
+        );
+    }
     println!(
         "  \x1b[1;90m󰅟 CRITIC QUOTE:\x1b[0m        \"{}\"\n",
         res.tier_quote
@@ -197,6 +212,11 @@ fn print_terminal_banner(res: &score::OmaRankResult) {
 
     println!("  \x1b[1;36m󰩠 OmaStat Community Ranking:\x1b[0m");
     println!("  • {}", res.percentile_text);
+    if res.rank_is_estimate {
+        println!(
+            "  • Offline estimate: the real OmaStat rank needs survey opt-in and network access."
+        );
+    }
     println!("  • Submit to anonymous community survey: \x1b[1;32momarank-engine --submit-survey\x1b[0m\n");
 }
 

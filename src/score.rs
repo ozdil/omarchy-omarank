@@ -23,6 +23,9 @@ pub struct OmaRankResult {
     pub tier_color: String,
     pub sub_scores: SubScores,
     pub percentile_text: String,
+    /// True while global_rank/total_machines are the offline estimate rather than a real
+    /// OmaStat rank (only fetched after the user opted in to the survey).
+    pub rank_is_estimate: bool,
     pub battlestation_id: String,
     pub archetype_signature: String,
     pub hardware: HardwareInfo,
@@ -59,11 +62,10 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
     let (tier_name, tier_icon, tier_nerd_icon, tier_quote, tier_color, _) =
         get_rank_tier(total_score);
 
+    // Offline estimate from a fixed score distribution; crate::rank replaces it with the
+    // real OmaStat rank when the user has opted in.
     let pct = (global_rank as f64 / total_machines as f64) * 100.0;
-    let percentile_text = format!(
-        "Top {:.1}% (#{} of {} machines globally)",
-        pct, global_rank, total_machines
-    );
+    let percentile_text = format!("Estimated Top {:.1}% (offline estimate)", pct);
 
     let battlestation_id = generate_local_battlestation_id();
     let archetype_signature = generate_archetype_signature(hw);
@@ -86,6 +88,7 @@ pub fn calculate_score(hw: &HardwareInfo) -> OmaRankResult {
             storage: storage_score,
         },
         percentile_text,
+        rank_is_estimate: true,
         battlestation_id,
         archetype_signature,
         hardware: hw.clone(),

@@ -24,6 +24,8 @@ Panel {
   readonly property color tierColorObj: Qt.color(root.tierColor)
   property string tierQuote: "Analyzing silicon architecture..."
   property string percentileText: "CALCULATING PERCENTILE..."
+  // The engine only reports a real OmaStat rank after survey opt-in; otherwise it is an estimate
+  property bool rankIsEstimate: true
 
   property int cpuScore: 0
   property int gpuScore: 0
@@ -162,11 +164,14 @@ Panel {
           root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
           root.tierQuote = root.cleanSanitized(d.tier_quote || "", 140)
           root.percentileText = root.cleanSanitized(d.percentile_text || "", 100)
+          root.rankIsEstimate = d.rank_is_estimate !== false
           root.battlestationId = root.cleanSanitized(d.battlestation_id || "OMA-????", 24)
           root.archetypeSignature = root.cleanSanitized(d.archetype_signature || "OMA-BUILD", 30)
 
           if (root.globalRank > 0) {
-            root.worldRankDesc = "#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString()
+            root.worldRankDesc = root.rankIsEstimate
+              ? ("~#" + root.globalRank.toLocaleString() + " (estimate)")
+              : ("#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString())
           }
 
           if (d.sub_scores) {
@@ -460,7 +465,7 @@ Panel {
             id: heroMeta
             textFormat: Text.PlainText
             width: parent.width
-            text: (root.globalRank > 0 ? ("WORLD RANK #" + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
+            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
