@@ -26,13 +26,94 @@ pub struct HardwareInfo {
     pub mobo_vendor: String,
     pub mobo_name: String,
     pub mobo_bios: String,
+    pub system_vendor: String,
+    pub product_name: String,
     pub chipset: String,
     pub gpu_name: String,
     pub gpu_driver: String,
+    /// Dedicated VRAM in MiB (nvidia-smi or amdgpu sysfs); 0 when unknown.
+    pub gpu_vram_mb: u64,
+    /// True for iGPUs (Intel non-Arc-A/B, AMD APUs). Drives the integrated scoring table.
+    pub gpu_integrated: bool,
     pub monitors: Vec<MonitorInfo>,
     pub storage_type: String,
     pub storage_model: String,
     pub os_name: String,
+}
+
+/// How long a cached hardware profile stays valid within the same boot.
+const HW_CACHE_MAX_AGE_SECS: u64 = 3600;
+
+#[derive(Serialize, Deserialize)]
+struct HardwareCache {
+    engine_version: String,
+    boot_id: String,
+    saved_epoch: u64,
+    hardware: HardwareInfo,
+}
+
+fn hardware_cache_path() -> Option<std::path::PathBuf> {
+    crate::securefs::xdg_path("XDG_CACHE_HOME", ".cache", "hardware.json")
+}
+
+fn read_boot_id() -> String {
+    fs::read_to_string("/proc/sys/kernel/random/boot_id")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn cache_is_fresh(cache: &HardwareCache, boot_id: &str, now: u64) -> bool {
+    !boot_id.is_empty()
+        && cache.boot_id == boot_id
+        && cache.engine_version == env!("CARGO_PKG_VERSION")
+        && cache.saved_epoch <= now
+        && now - cache.saved_epoch < HW_CACHE_MAX_AGE_SECS
+}
+
+/// Hardware profile with a per-boot cache: lspci/inxi/nvidia-smi are slow (and nvidia-smi
+/// wakes a sleeping dGPU), so a profile from the same boot that is under an hour old is reused.
+/// Monitors are always re-read through hyprctl since they change with docking and are cheap.
+/// `rescan` ignores the cache and rewrites it.
+pub fn detect_hardware_cached(rescan: bool) -> HardwareInfo {
+    let boot_id = read_boot_id();
+    let path = hardware_cache_path();
+
+    if !rescan {
+        if let Some(p) = &path {
+            let cached = crate::securefs::read_owned_file(p, 64 * 1024)
+                .and_then(|c| serde_json::from_str::<HardwareCache>(&c).ok());
+            if let Some(cache) = cached {
+                if cache_is_fresh(&cache, &boot_id, now_epoch()) {
+                    let mut hw = cache.hardware;
+                    hw.monitors = detect_monitors(Instant::now() + Duration::from_millis(1500));
+                    return hw;
+                }
+            }
+        }
+    }
+
+    let hw = detect_hardware();
+    if let Some(p) = &path {
+        if !boot_id.is_empty() {
+            let cache = HardwareCache {
+                engine_version: env!("CARGO_PKG_VERSION").to_string(),
+                boot_id,
+                saved_epoch: now_epoch(),
+                hardware: hw.clone(),
+            };
+            if let Ok(json) = serde_json::to_string(&cache) {
+                crate::securefs::write_owned_file_atomic(p, json.as_bytes());
+            }
+        }
+    }
+    hw
 }
 
 pub fn detect_hardware() -> HardwareInfo {
@@ -41,7 +122,8 @@ pub fn detect_hardware() -> HardwareInfo {
     let (ram_total_mb, ram_total_gb) = detect_ram();
     let (ram_type, ram_speed_mts, ram_modules, ram_slots) = detect_ram_details(deadline);
     let (mobo_vendor, mobo_name, mobo_bios, chipset) = detect_motherboard(deadline);
-    let (gpu_name, gpu_driver) = detect_gpu(deadline);
+    let (system_vendor, product_name) = detect_system();
+    let (gpu_name, gpu_driver, gpu_vram_mb, gpu_integrated) = detect_gpu(deadline);
     let monitors = detect_monitors(deadline);
     let (storage_type, storage_model) = detect_storage();
     let os_name = detect_os();
@@ -60,9 +142,13 @@ pub fn detect_hardware() -> HardwareInfo {
         mobo_vendor,
         mobo_name,
         mobo_bios,
+        system_vendor,
+        product_name,
         chipset,
         gpu_name,
         gpu_driver,
+        gpu_vram_mb,
+        gpu_integrated,
         monitors,
         storage_type,
         storage_model,
@@ -99,6 +185,12 @@ fn detect_cpu() -> (String, usize, usize, f64) {
         }
     }
 
+    // "cpu MHz" is the current (often idle) clock, which made the score drift between runs.
+    // Prefer the advertised maximum from cpufreq when it is available.
+    if let Some(max_khz) = read_cpufreq_max_khz() {
+        max_mhz = max_khz as f64 / 1000.0;
+    }
+
     if cores == 0 {
         cores = if threads > 0 { threads } else { 1 };
     }
@@ -107,6 +199,22 @@ fn detect_cpu() -> (String, usize, usize, f64) {
     }
 
     (name, cores, threads, max_mhz)
+}
+
+fn read_cpufreq_max_khz() -> Option<u64> {
+    let entries = fs::read_dir("/sys/devices/system/cpu").ok()?;
+    entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("cpu")
+                && name[3..].chars().all(|c| c.is_ascii_digit())
+                && name.len() > 3
+        })
+        .filter_map(|e| fs::read_to_string(e.path().join("cpufreq/cpuinfo_max_freq")).ok())
+        .filter_map(|v| v.trim().parse::<u64>().ok())
+        .max()
 }
 
 fn detect_ram() -> (u64, f64) {
@@ -128,11 +236,78 @@ fn detect_ram() -> (u64, f64) {
     (total_mb, (total_gb * 10.0).round() / 10.0)
 }
 
-fn detect_gpu(deadline: Instant) -> (String, String) {
-    // 1. If nvidia-smi is available, query exact discrete GPU model and driver
+/// AMD APU codenames as lspci prints them (e.g. "Phoenix1", "Rembrandt [Radeon 680M]",
+/// "Strix [Radeon 880M / 890M]"). APUs can carve out a large UMA frame buffer, so the name is
+/// checked in addition to the VRAM size.
+pub fn is_amd_apu_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    [
+        "strix",
+        "krackan",
+        "phoenix",
+        "hawk point",
+        "rembrandt",
+        "renoir",
+        "cezanne",
+        "lucienne",
+        "barcelo",
+        "picasso",
+        "raven",
+        "mendocino",
+        "van gogh",
+    ]
+    .iter()
+    .any(|c| n.contains(c))
+}
+
+/// Decides whether a display controller is an integrated GPU.
+/// Intel: everything except Arc A/B (Alchemist/Battlemage) discrete cards.
+/// AMD: an APU codename, or amdgpu reporting less than 2 GiB of VRAM.
+fn is_integrated_gpu(vendor: &str, device: &str, driver: &str, vram_mb: u64) -> bool {
+    if vendor.contains("NVIDIA") {
+        return false;
+    }
+    if vendor.contains("Intel") {
+        return !(device.contains("Arc A")
+            || device.contains("Arc B")
+            || device.contains("Battlemage"));
+    }
+    if vendor.contains("Advanced Micro") || vendor.contains("AMD") || driver == "amdgpu" {
+        if is_amd_apu_name(device) {
+            return true;
+        }
+        if vram_mb > 0 {
+            return vram_mb < 2048;
+        }
+        // No VRAM info: only a branded RX / Radeon Pro part is assumed discrete
+        return !(device.contains("RX ") || device.contains("Radeon Pro"));
+    }
+    false
+}
+
+/// amdgpu exposes the dedicated VRAM size in bytes; other drivers do not have this file.
+fn read_pci_vram_mb(slot: &str) -> u64 {
+    if slot.is_empty() {
+        return 0;
+    }
+    let primary = format!("/sys/bus/pci/devices/0000:{}/mem_info_vram_total", slot);
+    let alt = format!("/sys/bus/pci/devices/{}/mem_info_vram_total", slot);
+    fs::read_to_string(&primary)
+        .or_else(|_| fs::read_to_string(&alt))
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|bytes| bytes / (1024 * 1024))
+        .unwrap_or(0)
+}
+
+fn detect_gpu(deadline: Instant) -> (String, String, u64, bool) {
+    // 1. If nvidia-smi is available, query exact discrete GPU model, driver and VRAM (MiB)
     if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
         "/usr/bin/nvidia-smi",
-        &["--query-gpu=gpu_name,driver_version", "--format=csv,noheader"],
+        &[
+            "--query-gpu=gpu_name,driver_version,memory.total",
+            "--format=csv,noheader,nounits",
+        ],
         &[],
         deadline,
         4096,
@@ -147,8 +322,17 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
                 } else {
                     "nvidia".to_string()
                 };
+                let vram_mb = parts
+                    .get(2)
+                    .and_then(|v| v.trim().parse::<u64>().ok())
+                    .unwrap_or(0);
                 if !name.is_empty() {
-                    return (clean_string(name, 55), clean_string(&drv, 30));
+                    return (
+                        clean_string(name, 55),
+                        clean_string(&drv, 30),
+                        vram_mb,
+                        false,
+                    );
                 }
             }
         }
@@ -158,63 +342,71 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
     struct GpuCandidate {
         name: String,
         driver: String,
-        is_discrete: bool,
+        vram_mb: u64,
+        integrated: bool,
     }
     let mut candidates: Vec<GpuCandidate> = Vec::new();
 
-    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
-        "/usr/bin/lspci",
-        &["-mm"],
-        &[],
-        deadline,
-        65536,
-    ) {
+    if let Some(stdout_bytes) =
+        crate::subproc::run_cmd_bounded("/usr/bin/lspci", &["-mm"], &[], deadline, 65536)
+    {
         let stdout = String::from_utf8_lossy(&stdout_bytes);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('"').collect();
             if parts.len() >= 4 {
                 let class = parts[1].trim();
-                    if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
-                        let slot_raw = parts[0].trim();
-                        let slot = if slot_raw.contains(':') { slot_raw } else { "" };
-                        let vendor = parts[3].trim();
-                        let device = if parts.len() >= 6 { parts[5].trim() } else { "" };
-                        let full_name = format!("{} {}", vendor, device).trim().to_string();
+                if class.contains("VGA") || class.contains("3D") || class.contains("Display") {
+                    let slot_raw = parts[0].trim();
+                    let slot = if slot_raw.contains(':') { slot_raw } else { "" };
+                    let vendor = parts[3].trim();
+                    let device = if parts.len() >= 6 {
+                        parts[5].trim()
+                    } else {
+                        ""
+                    };
+                    let full_name = format!("{} {}", vendor, device).trim().to_string();
 
-                        // Detect driver from sysfs for this PCI slot
-                        let mut dev_driver = String::from("drm");
-                        let sysfs_uevent = format!("/sys/bus/pci/devices/0000:{}/uevent", slot);
-                        let alt_uevent = format!("/sys/bus/pci/devices/{}/uevent", slot);
-                        let uevent_content = fs::read_to_string(&sysfs_uevent).or_else(|_| fs::read_to_string(&alt_uevent));
-                        if let Ok(content) = uevent_content {
-                            for uline in content.lines() {
-                                if uline.starts_with("DRIVER=") {
-                                    dev_driver = uline.trim_start_matches("DRIVER=").trim().to_string();
-                                    break;
-                                }
+                    // Detect driver from sysfs for this PCI slot
+                    let mut dev_driver = String::from("drm");
+                    let sysfs_uevent = format!("/sys/bus/pci/devices/0000:{}/uevent", slot);
+                    let alt_uevent = format!("/sys/bus/pci/devices/{}/uevent", slot);
+                    let uevent_content = fs::read_to_string(&sysfs_uevent)
+                        .or_else(|_| fs::read_to_string(&alt_uevent));
+                    if let Ok(content) = uevent_content {
+                        for uline in content.lines() {
+                            if uline.starts_with("DRIVER=") {
+                                dev_driver = uline.trim_start_matches("DRIVER=").trim().to_string();
+                                break;
                             }
                         }
-
-                        let is_discrete = vendor.contains("NVIDIA")
-                            || (vendor.contains("Advanced Micro") && (device.contains("RX ") || device.contains("Radeon Pro")))
-                            || (vendor.contains("Intel") && (device.contains("Arc A") || device.contains("Arc B") || device.contains("Battlemage")));
-
-                        candidates.push(GpuCandidate {
-                            name: full_name,
-                            driver: dev_driver,
-                            is_discrete,
-                        });
                     }
+
+                    let vram_mb = read_pci_vram_mb(slot);
+                    let integrated = is_integrated_gpu(vendor, device, &dev_driver, vram_mb);
+
+                    candidates.push(GpuCandidate {
+                        name: full_name,
+                        driver: dev_driver,
+                        vram_mb,
+                        integrated,
+                    });
                 }
             }
         }
-
-    if let Some(discrete) = candidates.iter().find(|c| c.is_discrete) {
-        return (clean_string(&discrete.name, 55), clean_string(&discrete.driver, 30));
     }
 
-    if let Some(first) = candidates.first() {
-        return (clean_string(&first.name, 55), clean_string(&first.driver, 30));
+    // Prefer a discrete card on hybrid laptops; otherwise report the first controller
+    if let Some(c) = candidates
+        .iter()
+        .find(|c| !c.integrated)
+        .or_else(|| candidates.first())
+    {
+        return (
+            clean_string(&c.name, 55),
+            clean_string(&c.driver, 30),
+            c.vram_mb,
+            c.integrated,
+        );
     }
 
     // Fallback: DRM sysfs query
@@ -234,7 +426,9 @@ fn detect_gpu(deadline: Instant) -> (String, String) {
         }
     }
 
-    (String::from("Generic GPU"), driver)
+    // i915 only drives Intel iGPUs; anything else stays "unknown" (not integrated)
+    let integrated = driver == "i915";
+    (String::from("Generic GPU"), driver, 0, integrated)
 }
 
 fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
@@ -259,25 +453,28 @@ fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
         65536,
     ) {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
-                if let Some(arr) = val.as_array() {
-                    for m in arr {
-                        let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
-                        let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
-                        let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
-                        let refresh_rate = m.get("refreshRate").and_then(|v| v.as_f64()).unwrap_or(60.0);
-                        let scale = m.get("scale").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            if let Some(arr) = val.as_array() {
+                for m in arr {
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
+                    let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
+                    let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
+                    let refresh_rate = m
+                        .get("refreshRate")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(60.0);
+                    let scale = m.get("scale").and_then(|v| v.as_f64()).unwrap_or(1.0);
 
-                        list.push(MonitorInfo {
-                            name: clean_string(name, 20),
-                            width,
-                            height,
-                            refresh_rate: (refresh_rate * 10.0).round() / 10.0,
-                            scale,
-                        });
-                    }
+                    list.push(MonitorInfo {
+                        name: clean_string(name, 20),
+                        width,
+                        height,
+                        refresh_rate: (refresh_rate * 10.0).round() / 10.0,
+                        scale,
+                    });
                 }
             }
         }
+    }
 
     // Fallback if hyprctl returned empty
     if list.is_empty() {
@@ -297,27 +494,30 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     let mut vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor")
         .or_else(|_| fs::read_to_string("/sys/class/dmi/id/sys_vendor"))
         .unwrap_or_else(|_| "Generic".into());
-    vendor = vendor.replace(" Technology Co., Ltd.", "").replace(" Inc.", "").trim().to_string();
+    vendor = vendor
+        .replace(" Technology Co., Ltd.", "")
+        .replace(" Inc.", "")
+        .trim()
+        .to_string();
 
     let mut name = fs::read_to_string("/sys/class/dmi/id/board_name")
         .or_else(|_| fs::read_to_string("/sys/class/dmi/id/product_name"))
         .unwrap_or_else(|_| "Motherboard".into());
     name = name.trim().to_string();
 
-    let bios = fs::read_to_string("/sys/class/dmi/id/bios_version")
-        .unwrap_or_else(|_| "Unknown".into());
+    let bios =
+        fs::read_to_string("/sys/class/dmi/id/bios_version").unwrap_or_else(|_| "Unknown".into());
 
     let mut chipset = String::from("Mainstream Chipset");
-    if let Some(stdout_bytes) = crate::subproc::run_cmd_bounded(
-        "/usr/bin/lspci",
-        &[],
-        &[],
-        deadline,
-        65536,
-    ) {
+    if let Some(stdout_bytes) =
+        crate::subproc::run_cmd_bounded("/usr/bin/lspci", &[], &[], deadline, 65536)
+    {
         let stdout = String::from_utf8_lossy(&stdout_bytes);
         for line in stdout.lines() {
-            if line.contains("ISA bridge:") || line.contains("Host bridge:") || line.contains("SMBus:") {
+            if line.contains("ISA bridge:")
+                || line.contains("Host bridge:")
+                || line.contains("SMBus:")
+            {
                 if let Some(idx) = line.find("Intel Corporation ") {
                     let rest = &line[idx + 18..];
                     if let Some(c_idx) = rest.find(" Chipset") {
@@ -340,7 +540,22 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
                         break;
                     }
                 } else if line.contains("AMD") {
-                    for pat in ["X870E", "X870", "X670E", "X670", "B850", "B650E", "B650", "A620", "X570", "B550", "B450", "Strix Point", "Hawk Point", "Phoenix"] {
+                    for pat in [
+                        "X870E",
+                        "X870",
+                        "X670E",
+                        "X670",
+                        "B850",
+                        "B650E",
+                        "B650",
+                        "A620",
+                        "X570",
+                        "B550",
+                        "B450",
+                        "Strix Point",
+                        "Hawk Point",
+                        "Phoenix",
+                    ] {
                         if line.contains(pat) {
                             chipset = format!("AMD {}", pat);
                             break;
@@ -355,7 +570,10 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     }
 
     if chipset == "Mainstream Chipset" {
-        for pat in ["Z890", "Z790", "B760", "H770", "H610", "X870E", "X870", "X670E", "X670", "B850", "B650", "A620", "Z690", "B660"] {
+        for pat in [
+            "Z890", "Z790", "B760", "H770", "H610", "X870E", "X870", "X670E", "X670", "B850",
+            "B650", "A620", "Z690", "B660",
+        ] {
             if name.contains(pat) {
                 if pat.starts_with('Z') || pat.starts_with('B') || pat.starts_with('H') {
                     chipset = format!("Intel {}", pat);
@@ -375,9 +593,21 @@ fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
     )
 }
 
+/// OEM identity (e.g. "LENOVO" / "ThinkPad X1 Carbon Gen 11"). The board fields alone
+/// often carry only an internal part number on laptops, which OmaStat cannot map to a brand.
+fn detect_system() -> (String, String) {
+    let read = |f: &str| fs::read_to_string(format!("/sys/class/dmi/id/{}", f)).unwrap_or_default();
+    (
+        clean_string(read("sys_vendor").trim(), 40),
+        clean_string(read("product_name").trim(), 50),
+    )
+}
+
+/// `inxi -m` needs root to read the SPD/DMI tables, so for a normal user it usually returns no
+/// module data. Report "Unknown"/0 in that case instead of inventing a DDR4-3200 dual-channel kit.
 fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
-    let mut ram_type = String::from("DDR4");
-    let mut speed_mts: u32 = 3200;
+    let mut ram_type = String::from("Unknown");
+    let mut speed_mts: u32 = 0;
     let mut modules: usize = 0;
     let mut slots: usize = 4;
 
@@ -389,41 +619,44 @@ fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
         65536,
     ) {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
-                if let Some(arr) = val.as_array() {
-                    for section in arr {
-                        if let Some(obj) = section.as_object() {
-                            for (k, v) in obj {
-                                if k.contains("Memory") {
-                                    if let Some(mem_items) = v.as_array() {
-                                        for item in mem_items {
-                                            if let Some(iobj) = item.as_object() {
-                                                for (ik, iv) in iobj {
-                                                    if ik.contains("type") {
-                                                        if let Some(s) = iv.as_str() {
-                                                            if s.starts_with("DDR") || s.starts_with("LPDDR") {
-                                                                ram_type = s.to_string();
+            if let Some(arr) = val.as_array() {
+                for section in arr {
+                    if let Some(obj) = section.as_object() {
+                        for (k, v) in obj {
+                            if k.contains("Memory") {
+                                if let Some(mem_items) = v.as_array() {
+                                    for item in mem_items {
+                                        if let Some(iobj) = item.as_object() {
+                                            for (ik, iv) in iobj {
+                                                if ik.contains("type") {
+                                                    if let Some(s) = iv.as_str() {
+                                                        if s.starts_with("DDR")
+                                                            || s.starts_with("LPDDR")
+                                                        {
+                                                            ram_type = s.to_string();
+                                                        }
+                                                    }
+                                                }
+                                                if ik.contains("speed") {
+                                                    if let Some(s) = iv.as_str() {
+                                                        if let Some(mts) =
+                                                            s.split_whitespace().next()
+                                                        {
+                                                            if let Ok(spd) = mts.parse::<u32>() {
+                                                                speed_mts = spd;
                                                             }
                                                         }
                                                     }
-                                                    if ik.contains("speed") {
-                                                        if let Some(s) = iv.as_str() {
-                                                            if let Some(mts) = s.split_whitespace().next() {
-                                                                if let Ok(spd) = mts.parse::<u32>() {
-                                                                    speed_mts = spd;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if ik.contains("Device") {
-                                                        modules += 1;
-                                                    }
-                                                    if ik.contains("slots") {
-                                                        if let Some(s) = iv.as_u64() {
-                                                            slots = s as usize;
-                                                        } else if let Some(s) = iv.as_str() {
-                                                            if let Ok(sl) = s.parse::<usize>() {
-                                                                slots = sl;
-                                                            }
+                                                }
+                                                if ik.contains("Device") {
+                                                    modules += 1;
+                                                }
+                                                if ik.contains("slots") {
+                                                    if let Some(s) = iv.as_u64() {
+                                                        slots = s as usize;
+                                                    } else if let Some(s) = iv.as_str() {
+                                                        if let Ok(sl) = s.parse::<usize>() {
+                                                            slots = sl;
                                                         }
                                                     }
                                                 }
@@ -437,10 +670,8 @@ fn detect_ram_details(deadline: Instant) -> (String, u32, usize, usize) {
                 }
             }
         }
-
-    if modules == 0 {
-        modules = 2;
     }
+
     (ram_type, speed_mts, modules, slots)
 }
 
@@ -458,11 +689,26 @@ fn detect_storage() -> (String, String) {
                     storage_model = clean_string(m.trim(), 40);
                     break;
                 }
-            } else if (name.starts_with("sd") || name.starts_with("vd")) && storage_model == "Solid State Drive" {
+            } else if (name.starts_with("sd") || name.starts_with("vd"))
+                && storage_model == "Solid State Drive"
+            {
+                // Skip USB sticks / card readers
+                let removable = fs::read_to_string(format!("/sys/block/{}/removable", name))
+                    .unwrap_or_default();
+                if removable.trim() == "1" {
+                    continue;
+                }
                 let model_path = format!("/sys/block/{}/device/model", name);
                 if let Ok(m) = fs::read_to_string(&model_path) {
                     storage_model = clean_string(m.trim(), 40);
-                    storage_type = "SATA SSD".to_string();
+                    let rotational =
+                        fs::read_to_string(format!("/sys/block/{}/queue/rotational", name))
+                            .unwrap_or_default();
+                    storage_type = if rotational.trim() == "1" {
+                        "HDD".to_string()
+                    } else {
+                        "SATA SSD".to_string()
+                    };
                 }
             }
         }
@@ -486,12 +732,144 @@ fn detect_os() -> String {
 pub fn clean_string(s: &str, max_len: usize) -> String {
     let sanitized: String = s
         .chars()
-        .filter(|c| !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\'')
+        .filter(|c| {
+            !c.is_control() && *c != '<' && *c != '>' && *c != '&' && *c != '"' && *c != '\''
+        })
         .collect();
-    let trimmed = sanitized.trim();
-    if trimmed.len() > max_len {
-        trimmed[..max_len].to_string()
-    } else {
-        trimmed.to_string()
+    // Truncate by characters: byte slicing panics inside multi-byte text such as
+    // "Intel® Core™" or a localized PRETTY_NAME, and release builds use panic=abort.
+    sanitized
+        .trim()
+        .chars()
+        .take(max_len)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_hw() -> HardwareInfo {
+        HardwareInfo {
+            cpu_name: "Test CPU".into(),
+            cpu_cores: 8,
+            cpu_threads: 16,
+            cpu_mhz: 5000.0,
+            ram_total_mb: 32768,
+            ram_total_gb: 32.0,
+            ram_type: "Unknown".into(),
+            ram_speed_mts: 0,
+            ram_modules: 0,
+            ram_slots: 4,
+            mobo_vendor: "Vendor".into(),
+            mobo_name: "Board".into(),
+            mobo_bios: "1.0".into(),
+            system_vendor: "OEM".into(),
+            product_name: "Laptop".into(),
+            chipset: "Mainstream Chipset".into(),
+            gpu_name: "Generic GPU".into(),
+            gpu_driver: "drm".into(),
+            gpu_vram_mb: 0,
+            gpu_integrated: false,
+            monitors: vec![],
+            storage_type: "NVMe".into(),
+            storage_model: "Disk".into(),
+            os_name: "Omarchy".into(),
+        }
+    }
+
+    #[test]
+    fn test_hardware_cache_freshness() {
+        let cache = HardwareCache {
+            engine_version: env!("CARGO_PKG_VERSION").to_string(),
+            boot_id: "boot-a".into(),
+            saved_epoch: 10_000,
+            hardware: sample_hw(),
+        };
+        assert!(cache_is_fresh(&cache, "boot-a", 10_000 + 3599));
+        assert!(
+            !cache_is_fresh(&cache, "boot-a", 10_000 + 3600),
+            "older than 1h"
+        );
+        assert!(!cache_is_fresh(&cache, "boot-b", 10_001), "different boot");
+        assert!(!cache_is_fresh(&cache, "", 10_001), "unknown boot id");
+        assert!(
+            !cache_is_fresh(&cache, "boot-a", 9_000),
+            "saved in the future"
+        );
+
+        let json = serde_json::to_string(&cache).unwrap();
+        let back: HardwareCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.hardware.cpu_name, "Test CPU");
+    }
+
+    #[test]
+    fn test_integrated_gpu_classification() {
+        let amd = "Advanced Micro Devices, Inc. [AMD/ATI]";
+        assert!(is_integrated_gpu(amd, "Phoenix1", "amdgpu", 512));
+        // APUs with a large UMA carve-out are still integrated
+        assert!(is_integrated_gpu(
+            amd,
+            "Strix [Radeon 880M / 890M]",
+            "amdgpu",
+            8192
+        ));
+        assert!(is_integrated_gpu(
+            amd,
+            "Unknown Device 1234",
+            "amdgpu",
+            1024
+        ));
+        assert!(!is_integrated_gpu(
+            amd,
+            "Navi 31 [Radeon RX 7900 XT/7900 XTX]",
+            "amdgpu",
+            24560
+        ));
+        assert!(!is_integrated_gpu(
+            amd,
+            "Navi 48 [Radeon RX 9070 XT]",
+            "amdgpu",
+            0
+        ));
+
+        let intel = "Intel Corporation";
+        assert!(is_integrated_gpu(
+            intel,
+            "Meteor Lake-P [Intel Arc Graphics]",
+            "i915",
+            0
+        ));
+        assert!(is_integrated_gpu(
+            intel,
+            "Lunar Lake [Intel Arc Graphics 130V / 140V]",
+            "xe",
+            0
+        ));
+        assert!(!is_integrated_gpu(intel, "DG2 [Arc A770]", "i915", 0));
+        assert!(!is_integrated_gpu(
+            intel,
+            "Battlemage G21 [Arc B580]",
+            "xe",
+            0
+        ));
+
+        assert!(!is_integrated_gpu(
+            "NVIDIA Corporation",
+            "AD102 [GeForce RTX 4090]",
+            "nvidia",
+            0
+        ));
+    }
+
+    #[test]
+    fn test_clean_string_multibyte_truncation() {
+        // Cut lands inside "®" (2 bytes) / "™" (3 bytes); byte slicing used to panic here
+        assert_eq!(clean_string("Intel® Core™ i7", 6), "Intel®");
+        assert_eq!(clean_string("Intel® Core™ i7", 12), "Intel® Core™");
+        assert_eq!(clean_string("Omarchy Türkçe Sürüm", 9), "Omarchy T");
+        assert_eq!(clean_string("  <b>\"x\"</b> ", 10), "bx/b");
     }
 }

@@ -20,7 +20,7 @@ ShellRoot {
     }
 
     IpcHandler {
-        target: "ozdil.omarank"
+        target: "ozdil.omarank.window"
 
         function toggle(): bool {
             win.visible = !win.visible;

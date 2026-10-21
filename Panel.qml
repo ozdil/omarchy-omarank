@@ -18,12 +18,15 @@ Panel {
   property int globalRank: 0
   property int totalMachines: 12480
   property string tierName: "Benchmarking..."
+  property string tierGrade: ""
   property string tierIcon: ""
   property string rankNerdIcon: ""
   property string tierColor: "#38bdf8"
   readonly property color tierColorObj: Qt.color(root.tierColor)
   property string tierQuote: "Analyzing silicon architecture..."
   property string percentileText: "CALCULATING PERCENTILE..."
+  // The engine only reports a real OmaStat rank after survey opt-in; otherwise it is an estimate
+  property bool rankIsEstimate: true
 
   property int cpuScore: 0
   property int gpuScore: 0
@@ -46,12 +49,14 @@ Panel {
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
+  property bool showSurveyPreview: false
+  property string surveyPreviewText: ""
   property bool showAboutModal: false
   readonly property string manifestPath: Qt.resolvedUrl("manifest.json").toString().replace(/^file:\/\//, "")
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omarank/manifest.json"
 
   property string pluginName: "OmaRank"
-  property string pluginVersion: "1.3.2"
+  property string pluginVersion: "1.4.0"
   property string pluginDescription: "Hardware benchmark suite, CPU/GPU telemetry, witty tier ranking, and OmaStat community survey hub for Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
@@ -70,6 +75,11 @@ Panel {
     } catch(e) {}
   }
 
+  // Group digits with commas regardless of system locale (the UI is English)
+  function fmtInt(n) {
+    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  }
+
   function rankNerdIconFor(score) {
     if (score >= 96) return "" // Trophy
     if (score >= 89) return "󰓅" // Speedometer
@@ -79,6 +89,22 @@ Panel {
     if (score >= 31) return "" // Chip
     if (score >= 16) return "" // Laptop
     return "" // Alert
+  }
+
+  // Multi-line variant for the survey JSON preview: keeps newlines and double quotes (the
+  // Text is PlainText) but strips other control characters and markup-ish characters.
+  function cleanPreview(str, maxLen) {
+    if (!str) return ""
+    var s = String(str).slice(0, maxLen || 4096)
+    return s.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f<>&`'\\]/g, "").trim()
+  }
+
+  function toggleSurveyPreview() {
+    root.showSurveyPreview = !root.showSurveyPreview
+    if (root.showSurveyPreview && !surveyPreviewProc.running) {
+      root.surveyPreviewText = "Collecting payload..."
+      surveyPreviewProc.running = true
+    }
   }
 
   function cleanSanitized(str, maxLen) {
@@ -91,8 +117,10 @@ Panel {
     return Qt.resolvedUrl("omarank-engine").toString().replace(/^file:\/\//, "")
   }
 
-  function refresh() {
+  // rescan=true bypasses the engine's per-boot hardware cache (re-runs lspci/inxi/nvidia-smi)
+  function refresh(rescan) {
     if (!statusProc.running) {
+      statusProc.command = [root.resolveEnginePath(), rescan ? "--rescan" : "--json"]
       statusProc.running = true
     }
   }
@@ -118,9 +146,10 @@ Panel {
   function launchDashboard() {
     root.close()
     var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
-    launchProc.command = [dashPath]
-    launchDeadlineTimer.restart()
-    launchProc.running = true
+    // Detached: the dashboard is a long-lived window/terminal, so it must not be bound to
+    // launchDeadlineTimer, which killed it after 5 seconds.
+    dashboardProc.command = [dashPath]
+    dashboardProc.startDetached()
   }
 
   function triggerSurvey() {
@@ -154,16 +183,20 @@ Panel {
           root.globalRank = Number(d.global_rank) || 0
           root.totalMachines = Number(d.total_machines) || 12480
           root.tierName = root.cleanSanitized(d.tier_name || "Unknown", 40)
+          root.tierGrade = root.cleanSanitized(d.grade || "", 3)
           root.tierIcon = root.cleanSanitized(d.tier_icon || "󰢮", 8)
           root.rankNerdIcon = root.cleanSanitized(d.tier_nerd_icon || root.rankNerdIconFor(root.totalScore), 8)
           root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
           root.tierQuote = root.cleanSanitized(d.tier_quote || "", 140)
           root.percentileText = root.cleanSanitized(d.percentile_text || "", 100)
+          root.rankIsEstimate = d.rank_is_estimate !== false
           root.battlestationId = root.cleanSanitized(d.battlestation_id || "OMA-????", 24)
           root.archetypeSignature = root.cleanSanitized(d.archetype_signature || "OMA-BUILD", 30)
 
           if (root.globalRank > 0) {
-            root.worldRankDesc = "#" + root.globalRank.toLocaleString() + " / " + root.totalMachines.toLocaleString()
+            root.worldRankDesc = root.rankIsEstimate
+              ? ("~#" + root.fmtInt(root.globalRank) + " of " + root.fmtInt(root.totalMachines) + " (estimate)")
+              : ("#" + root.fmtInt(root.globalRank) + " / " + root.fmtInt(root.totalMachines))
           }
 
           if (d.sub_scores) {
@@ -237,7 +270,23 @@ Panel {
   }
 
   Process {
+    id: surveyPreviewProc
+    command: [root.resolveEnginePath(), "--survey-preview"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var preview = root.cleanPreview(text, 4096)
+        root.surveyPreviewText = preview.length > 0 ? preview : "Preview unavailable."
+      }
+    }
+  }
+
+  Process {
     id: copyProc
+  }
+
+  Process {
+    id: dashboardProc
   }
 
   FileView {
@@ -282,22 +331,25 @@ Panel {
   Component.onDestruction: {
     if (statusProc.running) statusProc.running = false
     if (surveyProc.running) surveyProc.running = false
+    if (surveyPreviewProc.running) surveyPreviewProc.running = false
     if (copyProc.running) copyProc.running = false
     if (launchProc.running) launchProc.running = false
   }
 
-  Component.onCompleted: {
-    if (!statusProc.running) statusProc.running = true
+  Component.onCompleted: root.refresh()
+
+  // Each engine run spawns lspci/nvidia-smi/inxi/hyprctl (nvidia-smi wakes a sleeping dGPU on
+  // hybrid laptops), so only poll while the panel is visible and refresh once when it opens.
+  onOpenedChanged: {
+    if (root.opened) root.refresh()
   }
 
   Timer {
     interval: 30000
-    running: true
+    running: root.opened
     repeat: true
     triggeredOnStart: false
-    onTriggered: {
-      if (!statusProc.running) statusProc.running = true
-    }
+    onTriggered: root.refresh()
   }
 
   Timer {
@@ -343,18 +395,17 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (t === "r" || t === "R") {
-          if (!statusProc.running) statusProc.running = true
+          root.refresh(true)
         } else if (t === "a" || t === "A") {
           root.showAboutModal = !root.showAboutModal
         } else if (t === "c" || t === "C") {
-          root.copyShareableCard()
-        } else if (t === "s" || t === "S") {
-          root.submitSurvey()
-        } else if (t === "m" || t === "M") {
-          root.launchMissionCenter()
-        } else if (t === "b" || t === "B") {
-          root.launchBtop()
+          root.copyToClipboard(root.archetypeSignature, "Archetype Copied: " + root.archetypeSignature)
+        } else if (t === "d" || t === "D") {
+          root.launchDashboard()
+        } else if (t === "l" || t === "L") {
+          root.openWebLeaderboard()
         }
+        // Survey submission stays on its button only: it sends data, so no single-key shortcut.
       }
 
       Column {
@@ -409,7 +460,7 @@ Panel {
             horizontalPadding: Style.space(5)
             verticalPadding: Style.space(2)
             Layout.alignment: Qt.AlignVCenter
-            onClicked: root.refresh()
+            onClicked: root.refresh(true)
           }
 
           Button {
@@ -451,7 +502,7 @@ Panel {
             id: heroMeta
             textFormat: Text.PlainText
             width: parent.width
-            text: (root.globalRank > 0 ? ("WORLD RANK #" + root.globalRank.toLocaleString() + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
+            text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.fmtInt(root.globalRank) + " • ") : "") + (root.tierGrade ? ("GRADE " + root.tierGrade + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -774,8 +825,8 @@ Panel {
           }
 
           SubScorePill {
-            label: "MOBO " + root.moboScore
-            tooltip: "Motherboard Score: " + root.moboScore + "/100 (" + root.moboDesc + ")"
+            label: "DISK " + root.storageScore
+            tooltip: "Storage Score: " + root.storageScore + "/100 (" + root.storageDesc + ")"
             width: subScoresRow.cellWidth
           }
 
@@ -786,8 +837,8 @@ Panel {
           }
 
           SubScorePill {
-            label: "DISK " + root.storageScore
-            tooltip: "Storage Score: " + root.storageScore + "/100 (" + root.storageDesc + ")"
+            label: "MOBO " + root.moboScore
+            tooltip: "Motherboard Score: " + root.moboScore + "/100 (" + root.moboDesc + ")"
             width: subScoresRow.cellWidth
           }
         }
@@ -894,17 +945,67 @@ Panel {
         width: parent.width
         spacing: Style.space(6)
 
-        Button {
+        RowLayout {
           width: parent.width
-          bordered: true
-          text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
-          fontSize: Style.font.bodySmall
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.fontFamily
-          horizontalPadding: Style.spacing.controlPaddingX
-          verticalPadding: Style.spacing.controlPaddingY
-          enabled: !root.isSubmittingSurvey
-          onClicked: root.triggerSurvey()
+          spacing: Style.space(6)
+
+          Button {
+            Layout.fillWidth: true
+            bordered: true
+            text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
+            fontSize: Style.font.bodySmall
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            enabled: !root.isSubmittingSurvey
+            onClicked: root.triggerSurvey()
+          }
+
+          Button {
+            bordered: true
+            text: root.showSurveyPreview ? "Hide data" : "Preview data"
+            tooltipText: "Show the exact JSON the survey would send"
+            fontSize: Style.font.caption
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.space(8)
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: root.toggleSurveyPreview()
+          }
+        }
+
+        // Survey payload preview (output of omarank-engine --survey-preview, capped at 4 KiB)
+        BorderSurface {
+          visible: root.showSurveyPreview
+          width: parent.width
+          implicitHeight: Style.space(160)
+          radius: Style.cornerRadius
+          color: Qt.rgba(0, 0, 0, 0.25)
+          border.color: Qt.rgba(root.bar ? root.bar.foreground.r : 1, root.bar ? root.bar.foreground.g : 1, root.bar ? root.bar.foreground.b : 1, 0.22)
+          border.width: 1
+
+          Flickable {
+            id: previewFlick
+            anchors.fill: parent
+            anchors.margins: Style.space(8)
+            clip: true
+            contentWidth: width
+            contentHeight: previewText.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+
+            Text {
+              id: previewText
+              width: previewFlick.width
+              textFormat: Text.PlainText
+              text: root.surveyPreviewText
+              wrapMode: Text.WrapAnywhere
+              color: root.bar ? root.bar.foreground : Color.foreground
+              opacity: 0.85
+              font.family: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
+              font.pixelSize: Style.font.caption
+            }
+          }
         }
 
         Text {

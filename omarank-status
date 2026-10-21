@@ -15,9 +15,14 @@ if [ "${OMARANK_SECURE_ENV:-0}" != "1" ]; then
         USER="${USER:-$(/usr/bin/id -un 2>/dev/null || echo "user")}" \
         LANG="${LANG:-C.UTF-8}" \
         LC_ALL="${LC_ALL:-C.UTF-8}" \
+        HYPRLAND_INSTANCE_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-}" \
         XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(/usr/bin/id -u 2>/dev/null || echo 1000)}" \
         XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}" \
         XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}" \
+        XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}" \
+        OMASTAT_URL="${OMASTAT_URL:-}" \
+        HTTPS_PROXY="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" NO_PROXY="${NO_PROXY:-}" \
+        https_proxy="${https_proxy:-}" http_proxy="${http_proxy:-}" no_proxy="${no_proxy:-}" \
         OMARANK_SECURE_ENV=1 \
         /bin/bash -p "$0" "$@"
 fi
@@ -78,34 +83,45 @@ if [[ "${NEEDS_BUILD}" -eq 1 && -n "${CARGO_BIN}" && -f "${DIR}/Cargo.toml" ]]; 
 fi
 
 # Fail-closed execution gate: require verified source identity, binary existence, and digest binding
-if [[ -z "${SOURCE_HASH}" ]]; then
-    echo "Security Error: Source identity could not be computed" >&2
-    exit 1
+# Packaged installs (PKGBUILD) ship only the binary, not src/: trust it when the binary
+# and its directory are root-owned and not writable by us (managed by pacman).
+PACKAGED_INSTALL=0
+if [[ -z "${SOURCE_HASH}" && -x "${BIN}" && ! -w "${BIN}" && ! -w "${DIR}" \
+      && "$(/usr/bin/stat -c %u "${BIN}" 2>/dev/null)" == "0" \
+      && "$(/usr/bin/stat -c %u "${DIR}" 2>/dev/null)" == "0" ]]; then
+    PACKAGED_INSTALL=1
 fi
 
-if [[ ! -x "${BIN}" ]]; then
-    echo '{"text":"OMARANK: OFFLINE","tooltip":"Engine binary missing or not executable (run cargo build --release --locked)","class":"alert"}'
-    exit 1
-fi
+if [[ "${PACKAGED_INSTALL}" -eq 0 ]]; then
+    if [[ -z "${SOURCE_HASH}" ]]; then
+        echo "Security Error: Source identity could not be computed" >&2
+        exit 1
+    fi
 
-if [[ ! -f "${STAMP}" ]]; then
-    echo "Security Error: Engine provenance stamp missing" >&2
-    exit 1
-fi
+    if [[ ! -x "${BIN}" ]]; then
+        echo '{"text":"OMARANK: OFFLINE","tooltip":"Engine binary missing or not executable (run cargo build --release --locked)","class":"alert"}'
+        exit 1
+    fi
 
-STORED_SRC=""
-STORED_BIN=""
-read -r STORED_SRC STORED_BIN < "${STAMP}" 2>/dev/null || true
+    if [[ ! -f "${STAMP}" ]]; then
+        echo "Security Error: Engine provenance stamp missing" >&2
+        exit 1
+    fi
 
-if [[ "${STORED_SRC}" != "${SOURCE_HASH}" ]]; then
-    echo "Security Error: Engine source provenance mismatch" >&2
-    exit 1
-fi
+    STORED_SRC=""
+    STORED_BIN=""
+    read -r STORED_SRC STORED_BIN < "${STAMP}" 2>/dev/null || true
 
-CURRENT_BIN_HASH="$(/usr/bin/sha256sum "${BIN}" 2>/dev/null | /usr/bin/awk '{print $1}')"
-if [[ -z "${CURRENT_BIN_HASH}" || "${CURRENT_BIN_HASH}" != "${STORED_BIN}" ]]; then
-    echo "Security Error: Engine binary provenance mismatch" >&2
-    exit 1
+    if [[ "${STORED_SRC}" != "${SOURCE_HASH}" ]]; then
+        echo "Security Error: Engine source provenance mismatch" >&2
+        exit 1
+    fi
+
+    CURRENT_BIN_HASH="$(/usr/bin/sha256sum "${BIN}" 2>/dev/null | /usr/bin/awk '{print $1}')"
+    if [[ -z "${CURRENT_BIN_HASH}" || "${CURRENT_BIN_HASH}" != "${STORED_BIN}" ]]; then
+        echo "Security Error: Engine binary provenance mismatch" >&2
+        exit 1
+    fi
 fi
 
 exec "${BIN}" --status

@@ -15,8 +15,12 @@ permissions:
 
 jobs:
   analyze:
-    name: CodeQL Security Scan
+    name: CodeQL Security Scan (${{ matrix.language }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ "actions", "rust" ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,7 +28,10 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: actions
+          languages: ${{ matrix.language }}
+          build-mode: none
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
