@@ -31,13 +31,22 @@ QtObject {
     property color accentWarning: "#eed49f"
     property color accentDanger: "#ed8796"
 
-    readonly property int radiusSm: 4
-    readonly property int radiusMd: 8
-    readonly property int radiusLg: 12
+    // Corner radius mirrors Hyprland's decoration:rounding, exactly like the Omarchy shell's
+    // Style.cornerRadius (0 = Omarchy's default square corners). Read once at startup.
+    property int cornerRadius: 0
+    readonly property int radiusSm: cornerRadius
+    readonly property int radiusMd: cornerRadius
+    readonly property int radiusLg: cornerRadius
 
-    readonly property string fontFamily: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
-    readonly property string monoFont: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
-    readonly property string iconFont: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
+    // `omarchy toggle animations` turns Hyprland animations off; honour it as reduced motion.
+    property bool reduceMotion: false
+    function duration(ms) { return reduceMotion ? 0 : ms }
+
+    // Omarchy's shell font is the fontconfig `monospace` alias, set by `omarchy font set`
+    // (a Nerd Font by default, so the icon glyphs below resolve through it).
+    readonly property string fontFamily: "monospace"
+    readonly property string monoFont: "monospace"
+    readonly property string iconFont: "monospace"
 
     // Themeable Monochrome Icons (Unicode Font Glyph Standard - Zero Emoji Policy).
     // Material Design glyphs live above U+FFFF, so they are built with fromCodePoint;
@@ -81,6 +90,9 @@ QtObject {
         var acc = dict["accent"] || dict["color4"] || dict["color6"] || "#b8b8b8"
         var sel = dict["selection"] || dict["selection_background"] || ""
         var mut = dict["muted"] || dict["color8"] || ""
+        // colors.toml values are strings; component access (.r/.g/.b) needs real colors
+        var fgc = Qt.color(fg)
+        var accc = Qt.color(acc)
 
         root.bgBase = base
 
@@ -89,28 +101,54 @@ QtObject {
             root.bgSurface = dict["lighter_background"] || (sel ? sel : Qt.lighter(base, 1.3))
             root.bgCard = (sel && sel !== base) ? sel : Qt.lighter(base, 1.5)
             root.bgCardHover = Qt.lighter(root.bgCard, 1.15)
-            root.border = mut ? mut : Qt.rgba(fg.r, fg.g, fg.b, 0.2)
-            root.borderLight = Qt.rgba(acc.r, acc.g, acc.b, 0.35)
+            root.border = mut ? mut : Qt.rgba(fgc.r, fgc.g, fgc.b, 0.2)
+            root.borderLight = Qt.rgba(accc.r, accc.g, accc.b, 0.35)
             root.textMain = dict["bright_foreground"] || fg
-            root.textMuted = dict["light_foreground"] || mut || Qt.rgba(fg.r, fg.g, fg.b, 0.65)
-            root.textDim = dict["dark_foreground"] || dict["color8"] || Qt.rgba(fg.r, fg.g, fg.b, 0.4)
+            root.textMuted = dict["light_foreground"] || mut || Qt.rgba(fgc.r, fgc.g, fgc.b, 0.65)
+            root.textDim = dict["dark_foreground"] || dict["color8"] || Qt.rgba(fgc.r, fgc.g, fgc.b, 0.4)
         } else {
             root.bgDark = Qt.darker(base, 1.08)
             root.bgSurface = Qt.lighter(base, 1.02)
             root.bgCard = Qt.darker(base, 1.04)
             root.bgCardHover = Qt.darker(root.bgCard, 1.06)
-            root.border = mut ? mut : Qt.rgba(fg.r, fg.g, fg.b, 0.2)
-            root.borderLight = Qt.rgba(acc.r, acc.g, acc.b, 0.35)
+            root.border = mut ? mut : Qt.rgba(fgc.r, fgc.g, fgc.b, 0.2)
+            root.borderLight = Qt.rgba(accc.r, accc.g, accc.b, 0.35)
             root.textMain = dict["bright_foreground"] || fg
-            root.textMuted = dict["light_foreground"] || mut || Qt.rgba(fg.r, fg.g, fg.b, 0.65)
-            root.textDim = Qt.rgba(fg.r, fg.g, fg.b, 0.4)
+            root.textMuted = dict["light_foreground"] || mut || Qt.rgba(fgc.r, fgc.g, fgc.b, 0.65)
+            root.textDim = Qt.rgba(fgc.r, fgc.g, fgc.b, 0.4)
         }
 
         root.accent = acc
         root.accentHover = Qt.lighter(acc, 1.15)
         root.accentSuccess = dict["bright_green"] || dict["green"] || "#a6da95"
         root.accentWarning = dict["yellow"] || dict["bright_yellow"] || "#eed49f"
-        root.accentDanger = dict["red"] || dict["bright_red"] || "#ed8796"
+        root.accentDanger = dict["red"] || dict["color1"] || dict["bright_red"] || "#ed8796"
+    }
+
+    function applyHyprOption(raw, apply) {
+        try {
+            var json = JSON.parse(raw || "{}")
+            var n = Number(json.int)
+            if (isFinite(n) && n >= 0) apply(n)
+        } catch (e) {
+            // hyprctl missing / not running under Hyprland: keep the defaults
+        }
+    }
+
+    property Process roundingProc: Process {
+        command: ["hyprctl", "-j", "getoption", "decoration:rounding"]
+        running: Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") !== ""
+        stdout: StdioCollector {
+            onStreamFinished: root.applyHyprOption(text, function(n) { root.cornerRadius = Math.round(n) })
+        }
+    }
+
+    property Process animationsProc: Process {
+        command: ["hyprctl", "-j", "getoption", "animations:enabled"]
+        running: Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") !== ""
+        stdout: StdioCollector {
+            onStreamFinished: root.applyHyprOption(text, function(n) { root.reduceMotion = (n === 0) })
+        }
     }
 
     property FileView colorsFile: FileView {

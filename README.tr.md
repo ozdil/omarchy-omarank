@@ -52,7 +52,10 @@ OmaStat ile aynı ölçek kullanılır; `--json` çıktısında `grade` alanıd�
 
 ## Gereksinimler
 
+- Omarchy Quickshell masaüstü (`omarchy-shell`), Qt 6.12 LTS veya üstü
+- Wayland oturumu; Hyprland varsa monitör bilgisi hyprctl'den, yoksa DRM sysfs'ten okunur (X11 yolu yok)
 - cargo ve rustc (Rust derleme zinciri)
+- wl-clipboard (kopyalama düğmeleri)
 - curl (OmaStat topluluk anket gönderimi için)
 - inxi ve pciutils (Gelişmiş donanım dökümü için)
 
@@ -61,6 +64,9 @@ OmaStat ile aynı ölçek kullanılır; `--json` çıktısında `grade` alanıd�
 ## Kurulum ve Derleme
 
 ```bash
+# Eklentiyi ekleyin (Omarchy bar widget'larını yalnızca ~/.config/omarchy/plugins/ altından yükler)
+omarchy plugin add https://github.com/ozdil/omarchy-omarank.git
+
 # Eklenti dizinine gidin
 cd ~/.config/omarchy/plugins/ozdil.omarank
 
@@ -70,6 +76,9 @@ cargo build --release --locked
 # İkiliyi kurun
 cp target/release/omarank-engine ./omarank-engine
 cp target/release/omarank-engine ~/.local/bin/omarank-engine
+
+# Widget'ı bara yerleştirin (varsayılan bölüm: right)
+omarchy plugin enable ozdil.omarank
 ```
 
 ---
@@ -100,6 +109,13 @@ Harici GPU puanları yerleşik bir tablodan gelir; `~/.config/omarank/gpu_scores
 - `OMASTAT_URL` OmaStat sunucusunu değiştirir (temel adres; `https://...` ya da yerel test için `http://127.0.0.1` / `http://localhost`). `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` ayarlarına uyulur.
 
 ---
+
+## 1.5.0 Sürümündeki Değişiklikler
+
+- Qt 6.12 LTS: Qt 6.12 QtQuick'e kendi `Color` tipini ekledi ve bu, Omarchy palet singleton'ını gölgeliyordu; panel artık `Commons.Color` kullanıyor.
+- Omarchy tasarımıyla birebir uyum: sabit renk yok, köşeler Hyprland yuvarlaklığını izler, `monospace` yazı tipi, `omarchy toggle animations` ile kapanan hareketler, ilk açılışta oluşturulan kaydırılabilir panel kartı.
+- Wayland/Hyprland: pano ikinci bir Quickshell başlatmak yerine `omarchy-launch-or-focus-tui` ile açılır, bağlantılar `omarchy-launch-browser` ile, betikler Wayland oturum değişkenlerini aktarır.
+- Tüm liste: [CHANGELOG.md](CHANGELOG.md).
 
 ## 1.4.0 Sürümündeki Düzeltmeler
 

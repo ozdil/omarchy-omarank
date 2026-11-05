@@ -2,7 +2,29 @@
 
 All notable changes to OmaRank are listed here.
 
-## 1.4.0 (unreleased)
+## 1.5.0 (unreleased)
+
+Targets Qt 6.12 LTS and the current Omarchy shell plugin contract.
+
+### Fixed
+
+- **Panel colours broke on Qt 6.12.** Qt 6.12 adds a `Color` type to QtQuick that shadows the Omarchy `qs.Commons` palette singleton, so every bare `Color.foreground` / `Color.accent` in `Panel.qml` resolved to the wrong object (qmllint 6.12: 49 `Member "foreground" not found`). The panel now imports `qs.Commons as Commons` and reads `Commons.Color`, as Omarchy requires of plugins.
+- **The panel started a second Quickshell.** "Open dashboard" ran `omarank-dashboard`, which launched `quickshell -p qml/shell.qml` next to `omarchy-shell`; Omarchy plugins must never do that. The panel now opens the terminal dashboard through `omarchy-launch-or-focus-tui` (focusing an existing window), and inside Omarchy `omarank-dashboard` does the same unless `--window` is given.
+- **The PKGBUILD installed the widget where Omarchy never looks** (`/usr/share/omarchy/plugins`). The package now installs the engine to `/usr/bin`, a `/usr/bin/omarank-dashboard` link and the desktop entry, and tells you to add the plugin with `omarchy plugin add`; the panel falls back to `/usr/bin/omarank-engine` when its folder has no build.
+- **Wayland session variables were dropped** by the scripts' `env -i` re-exec (`XDG_SESSION_TYPE`, `XDG_DATA_DIRS`, `DBUS_SESSION_BUS_ADDRESS`, `OMARCHY_PATH`), so Qt could pick xcb under Xwayland and terminal/desktop-entry lookup failed. They are passed through, with `QT_QPA_PLATFORM` defaulting to `wayland;xcb` and client-side decorations off.
+- **Fake 1920x1080 display off Hyprland.** Without `hyprctl` the engine invented a monitor; it now reads connected outputs from DRM sysfs first, and skips disabled Hyprland outputs.
+- **Standalone theme colours were NaN** when `colors.toml` gave a foreground/accent without the optional keys (`.r/.g/.b` read on a string).
+
+### Changed
+
+- Omarchy design alignment: no hard-coded colours (verified badge, coffee button, about overlay, cards now use the palette, `Style.normalFillFor`, `Border.controlSpec` and `Commons.Color.popups`); corners follow Hyprland's rounding (`Style.cornerRadius`, square by default); the standalone window uses the `monospace` font alias and Hyprland's rounding; animations go through a reduced-motion aware duration and stay under 300 ms.
+- The panel card is lazy (`KeyboardPanel.content`), so it is built on first open instead of at shell start on every monitor, and it scrolls when the screen is too small.
+- Links open through `omarchy-launch-browser` (fallback `xdg-open`), detached.
+- Standalone window: Esc/Q close, R refresh, Shift+R re-scan, C copy archetype.
+- About overlay text is English like the rest of the UI; the self-declared "VERIFIED" badge is replaced by the version.
+- CI fails on a bare `Color.` palette reference in QML.
+
+## 1.4.0
 
 Works with OmaStat 1.1.0. Older OmaStat servers still accept the payload; they ignore `install_token` and have no rank API, so the rank stays an estimate.
 

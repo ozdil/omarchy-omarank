@@ -18,6 +18,14 @@ if [ "${OMARANK_SECURE_ENV:-0}" != "1" ]; then
         DISPLAY="${DISPLAY:-}" \
         WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
         HYPRLAND_INSTANCE_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-}" \
+        XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-}" \
+        XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-}" \
+        OMARCHY_PATH="${OMARCHY_PATH:-}" \
+        XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+        XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}" \
+        DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+        QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}" \
+        QT_WAYLAND_DISABLE_WINDOWDECORATION="${QT_WAYLAND_DISABLE_WINDOWDECORATION:-1}" \
         XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(/usr/bin/id -u 2>/dev/null || echo 1000)}" \
         XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}" \
         XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}" \
@@ -49,8 +57,24 @@ elif [[ -x "${HOME}/.local/bin/quickshell" ]]; then
     QUICKSHELL_BIN="${HOME}/.local/bin/quickshell"
 fi
 
-# Prefer native Quickshell standalone UI if available
-if [[ "${1:-}" != "--cli" && -n "${QUICKSHELL_BIN}" ]]; then
+# Inside Omarchy the desktop already runs one long-lived Quickshell (omarchy-shell), and
+# Omarchy's rule is to never start a second one. There the dashboard opens as a terminal
+# app through Omarchy's own launcher (focuses an existing window instead of stacking a new
+# one); `--window` still forces the standalone QML window. Elsewhere the window is the default.
+WANT_WINDOW=1
+if [[ "${1:-}" == "--window" ]]; then
+    shift
+elif [[ "${1:-}" == "--cli" ]]; then
+    WANT_WINDOW=0
+elif command -v omarchy-shell >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    WANT_WINDOW=0
+    if [[ ! -t 0 ]] && command -v omarchy-launch-or-focus-tui >/dev/null 2>&1; then
+        exec omarchy-launch-or-focus-tui --app-id=org.omarchy.omarank "${DIR}/omarank-dashboard" --cli "$@"
+    fi
+fi
+
+# Native Quickshell standalone UI
+if [[ "${WANT_WINDOW}" -eq 1 && -n "${QUICKSHELL_BIN}" ]]; then
     QML_SHELL="${DIR}/qml/shell.qml"
     if [[ -f "${QML_SHELL}" ]]; then
         # Toggle an already running standalone window. Its IPC target is distinct from the
@@ -67,8 +91,12 @@ if [[ "${1:-}" == "--cli" ]]; then
 fi
 
 # The CLI view is interactive: when launched from the bar (no TTY), open it in a terminal
-if [[ ! -t 0 ]] && command -v xdg-terminal-exec >/dev/null 2>&1; then
-    exec xdg-terminal-exec "${DIR}/omarank-dashboard" --cli "$@"
+if [[ ! -t 0 ]]; then
+    if command -v omarchy-launch-or-focus-tui >/dev/null 2>&1; then
+        exec omarchy-launch-or-focus-tui --app-id=org.omarchy.omarank "${DIR}/omarank-dashboard" --cli "$@"
+    elif command -v xdg-terminal-exec >/dev/null 2>&1; then
+        exec xdg-terminal-exec --app-id=org.omarchy.omarank "${DIR}/omarank-dashboard" --cli "$@"
+    fi
 fi
 
 BIN="${DIR}/omarank-engine"
