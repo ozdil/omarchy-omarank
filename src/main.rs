@@ -7,6 +7,22 @@ mod survey;
 
 use std::env;
 
+// `println!` panics when stdout is closed early (`omarank-engine --json | head`).
+// This shadows the std macro for this file: a broken pipe ends the process quietly
+// (status 0); any other write error is reported and exits 1.
+macro_rules! println {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout().lock(), $($arg)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("omarank-engine: failed writing to stdout: {e}");
+            std::process::exit(1);
+        }
+    }};
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
