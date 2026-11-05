@@ -13,7 +13,7 @@ Targets Qt 6.12 LTS and the current Omarchy shell plugin contract.
 - **The PKGBUILD installed the widget where Omarchy never looks** (`/usr/share/omarchy/plugins`). The package now installs the engine to `/usr/bin`, a `/usr/bin/omarank-dashboard` link and the desktop entry, and tells you to add the plugin with `omarchy plugin add`; the panel falls back to `/usr/bin/omarank-engine` when its folder has no build.
 - **Wayland session variables were dropped** by the scripts' `env -i` re-exec (`XDG_SESSION_TYPE`, `XDG_DATA_DIRS`, `DBUS_SESSION_BUS_ADDRESS`, `OMARCHY_PATH`), so Qt could pick xcb under Xwayland and terminal/desktop-entry lookup failed. They are passed through, with `QT_QPA_PLATFORM` defaulting to `wayland;xcb` and client-side decorations off.
 - **Fake 1920x1080 display off Hyprland.** Without `hyprctl` the engine invented a monitor; it now reads connected outputs from DRM sysfs first, and skips disabled Hyprland outputs.
-- **The engine aborted on a closed pipe.** `omarank-engine --json | head` (or any reader that stops early) panicked with "failed printing to stdout: Broken pipe"; it now exits quietly.
+- **The engine aborted on a closed pipe.** `omarank-engine --json | head` (or any reader that stops early) panicked with "failed printing to stdout: Broken pipe"; it now exits quietly (status 0); other stdout write errors are reported and exit 1.
 - **Standalone theme colours were NaN** when `colors.toml` gave a foreground/accent without the optional keys (`.r/.g/.b` read on a string).
 
 ### Changed
