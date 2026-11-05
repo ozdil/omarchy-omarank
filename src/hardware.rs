@@ -455,6 +455,10 @@ fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&stdout_bytes) {
             if let Some(arr) = val.as_array() {
                 for m in arr {
+                    // Mirrored/disabled outputs are not separate screens
+                    if m.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        continue;
+                    }
                     let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("DP-1");
                     let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
                     let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
@@ -476,7 +480,13 @@ fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
         }
     }
 
-    // Fallback if hyprctl returned empty
+    // Not Hyprland (or hyprctl failed): read connected outputs from DRM sysfs, which every
+    // Wayland compositor drives through KMS. The preferred mode is the first line of `modes`.
+    if list.is_empty() {
+        list = detect_monitors_drm("/sys/class/drm");
+    }
+
+    // Last resort so scoring still has a display
     if list.is_empty() {
         list.push(MonitorInfo {
             name: "Display-1".to_string(),
@@ -488,6 +498,53 @@ fn detect_monitors(deadline: Instant) -> Vec<MonitorInfo> {
     }
 
     list
+}
+
+/// Connected connectors under `drm_root` (e.g. `card1-DP-1`), with their preferred mode.
+/// sysfs does not expose the refresh rate or the compositor's scale, so those stay at 60 Hz / 1.0.
+fn detect_monitors_drm(drm_root: &str) -> Vec<MonitorInfo> {
+    let mut list = Vec::new();
+    let Ok(entries) = fs::read_dir(drm_root) else {
+        return list;
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("card") && n.contains('-') && !n.contains("Writeback"))
+        .collect();
+    names.sort();
+    for entry in names {
+        let dir = format!("{}/{}", drm_root, entry);
+        let status = fs::read_to_string(format!("{}/status", dir)).unwrap_or_default();
+        if status.trim() != "connected" {
+            continue;
+        }
+        let modes = fs::read_to_string(format!("{}/modes", dir)).unwrap_or_default();
+        let Some((w, h)) = modes.lines().next().and_then(parse_drm_mode) else {
+            continue;
+        };
+        // "card1-DP-1" -> "DP-1"
+        let connector = entry.split_once('-').map(|(_, c)| c).unwrap_or(&entry);
+        list.push(MonitorInfo {
+            name: clean_string(connector, 20),
+            width: w,
+            height: h,
+            refresh_rate: 60.0,
+            scale: 1.0,
+        });
+    }
+    list
+}
+
+/// "2560x1440" (optionally followed by an interlace marker such as "i") -> (2560, 1440)
+fn parse_drm_mode(line: &str) -> Option<(u32, u32)> {
+    let (w, rest) = line.trim().split_once('x')?;
+    let h: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let (w, h) = (w.parse().ok()?, h.parse().ok()?);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    Some((w, h))
 }
 
 fn detect_motherboard(deadline: Instant) -> (String, String, String, String) {
@@ -871,5 +928,41 @@ mod tests {
         assert_eq!(clean_string("Intel® Core™ i7", 12), "Intel® Core™");
         assert_eq!(clean_string("Omarchy Türkçe Sürüm", 9), "Omarchy T");
         assert_eq!(clean_string("  <b>\"x\"</b> ", 10), "bx/b");
+    }
+
+    #[test]
+    fn drm_mode_parsing() {
+        assert_eq!(parse_drm_mode("2560x1440"), Some((2560, 1440)));
+        assert_eq!(parse_drm_mode("1920x1080i\n"), Some((1920, 1080)));
+        assert_eq!(parse_drm_mode("garbage"), None);
+        assert_eq!(parse_drm_mode("0x0"), None);
+    }
+
+    #[test]
+    fn drm_monitor_fallback_reads_connected_outputs() {
+        let root = std::env::temp_dir().join(format!("omarank-drm-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for (name, status, modes) in [
+            ("card1-DP-1", "connected\n", "3840x2160\n2560x1440\n"),
+            ("card1-HDMI-A-1", "disconnected\n", ""),
+            ("card1-eDP-1", "connected\n", "2880x1800\n"),
+        ] {
+            let dir = root.join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("status"), status).unwrap();
+            fs::write(dir.join("modes"), modes).unwrap();
+        }
+        fs::create_dir_all(root.join("card1")).unwrap();
+        let list = detect_monitors_drm(root.to_str().unwrap());
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(list.len(), 2);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].width, list[0].height),
+            ("DP-1", 3840, 2160)
+        );
+        assert_eq!(
+            (list[1].name.as_str(), list[1].width, list[1].height),
+            ("eDP-1", 2880, 1800)
+        );
     }
 }

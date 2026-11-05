@@ -39,5 +39,13 @@ jobs:
           bash -n omarank-status
           bash -n omarank-dashboard
 
+      - name: Qt 6.12 palette guard
+        # Qt 6.12's QtQuick `Color` type shadows Omarchy's palette singleton: use Commons.Color
+        run: |
+          if grep -nE '(^|[^.A-Za-z_])Color\.' Panel.qml; then
+            echo "Bare Color.* found; import qs.Commons as Commons and use Commons.Color" >&2
+            exit 1
+          fi
+
       - name: Version consistency
         run: scripts/check-version.sh

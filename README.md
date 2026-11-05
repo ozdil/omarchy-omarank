@@ -57,8 +57,10 @@ The same scale is used by OmaStat. `--json` reports it as `grade`.
 
 ## Requirements
 
+- Omarchy with its Quickshell desktop (`omarchy-shell`), on Qt 6.12 LTS or newer
+- A Wayland session; Hyprland is used for monitor details when present, any other compositor falls back to DRM sysfs. There is no X11 code path.
 - cargo and rustc (Rust toolchain, for building from source)
-- inxi and lspci (for detailed hardware identification)
+- wl-clipboard (copy buttons), inxi and lspci (detailed hardware identification)
 
 ---
 
@@ -80,18 +82,15 @@ cargo build --release --locked
 install -m 755 target/release/omarank-engine ./omarank-engine
 ```
 
-### Step 3: Add to Omarchy Shell Configuration
-Add `ozdil.omarank` to `bar.layout.right` in `~/.config/omarchy/shell.json`:
-```json
-{
-  "id": "ozdil.omarank"
-}
-```
-
-### Step 4: Restart Shell
+### Step 3: Enable the Widget
+Plugins land disabled so you can review them first. Enabling places the widget in its default `right` section of the bar:
 ```bash
-omarchy-restart-shell
+omarchy plugin enable ozdil.omarank
 ```
+Move it later with `omarchy bar move ozdil.omarank --section <left|centerEnd|right|...>`.
+
+### Arch package
+`makepkg -si` with the bundled PKGBUILD installs `/usr/bin/omarank-engine`, `omarank-dashboard` and a desktop entry. Omarchy only loads bar widgets from `~/.config/omarchy/plugins/`, so still run Steps 1 and 3; the widget uses the packaged engine when the plugin folder has none.
 
 ---
 
@@ -147,6 +146,13 @@ OmaRank complies strictly with the Omarchy Linux Security Standards (AGENTS.md):
 - Secure File Permissions: State files are saved to `$XDG_STATE_HOME/omarank/` with secure POSIX mode 0600 file permissions.
 
 ---
+
+## What's New in 1.5.0
+
+- Qt 6.12 LTS: the panel reads the Omarchy palette through `Commons.Color`, because Qt 6.12 adds a QtQuick `Color` type that silently shadowed the bare `Color` singleton.
+- Omarchy design 1:1: theme tokens only (no hard-coded colours), Hyprland's rounding for corners, the `monospace` shell font, `Style.duration` motion that honours `omarchy toggle animations`, and a lazily built, scrollable panel card.
+- Wayland/Hyprland: the dashboard opens through `omarchy-launch-or-focus-tui` instead of starting a second Quickshell, links go through `omarchy-launch-browser`, the scripts pass the Wayland session variables through their clean environment, and monitors fall back to DRM sysfs off Hyprland.
+- The standalone window is keyboard driven: Esc/Q close, R refresh, Shift+R re-scan, C copy archetype.
 
 ## What's New in 1.4.0
 

@@ -3,6 +3,9 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+// Qt 6.12 adds a QtQuick `Color` type that shadows the Omarchy palette
+// singleton, so palette reads go through the qualified `Commons.Color`.
+import qs.Commons as Commons
 import qs.Ui
 
 Panel {
@@ -21,8 +24,9 @@ Panel {
   property string tierGrade: ""
   property string tierIcon: ""
   property string rankNerdIcon: ""
-  property string tierColor: "#38bdf8"
-  readonly property color tierColorObj: Qt.color(root.tierColor)
+  // Tier colour from the engine; kept for the standalone window and future use. The bar
+  // panel itself draws only with the Omarchy palette.
+  property string tierColor: ""
   property string tierQuote: "Analyzing silicon architecture..."
   property string percentileText: "CALCULATING PERCENTILE..."
   // The engine only reports a real OmaStat rank after survey opt-in; otherwise it is an estimate
@@ -45,7 +49,14 @@ Panel {
   property string osDesc: "Omarchy Linux"
   property string battlestationId: "OMA-????"
   property string archetypeSignature: "OMA-BUILD"
-  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
+  // Same theme plumbing as the first-party panels (tailscale, weather): the bar's
+  // detached foreground/font when hosted by it, the shell palette otherwise.
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
+  readonly property color dim: Qt.darker(foreground, 1.4)
+  readonly property string fontFamily: bar && bar.fontFamily ? bar.fontFamily : Style.font.family
+  readonly property color hoverFill: Style.hoverFillFor(foreground, Commons.Color.accent)
+  readonly property color cardFill: Style.normalFillFor(foreground)
+  readonly property var cardBorderSpec: Border.controlSpec("normal", foreground, Commons.Color.accent)
 
   property string surveyStatusMsg: ""
   property bool isSubmittingSurvey: false
@@ -56,7 +67,7 @@ Panel {
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omarank/manifest.json"
 
   property string pluginName: "OmaRank"
-  property string pluginVersion: "1.4.0"
+  property string pluginVersion: "1.5.0"
   property string pluginDescription: "Hardware benchmark suite, CPU/GPU telemetry, witty tier ranking, and OmaStat community survey hub for Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
@@ -117,10 +128,17 @@ Panel {
     return Qt.resolvedUrl("omarank-engine").toString().replace(/^file:\/\//, "")
   }
 
+  // `omarchy plugin add` clones the plugin without a built engine; the pacman package puts it
+  // in /usr/bin. Use the plugin-local build when it exists, the packaged one otherwise.
+  function engineCommand(args) {
+    return ["/bin/sh", "-c", 'e="$1"; shift; [ -x "$e" ] || e=/usr/bin/omarank-engine; exec "$e" "$@"',
+            "omarank-engine", root.resolveEnginePath()].concat(args)
+  }
+
   // rescan=true bypasses the engine's per-boot hardware cache (re-runs lspci/inxi/nvidia-smi)
   function refresh(rescan) {
     if (!statusProc.running) {
-      statusProc.command = [root.resolveEnginePath(), rescan ? "--rescan" : "--json"]
+      statusProc.command = root.engineCommand([rescan ? "--rescan" : "--json"])
       statusProc.running = true
     }
   }
@@ -135,21 +153,27 @@ Panel {
     copyToastTimer.restart()
   }
 
-  function openWebLeaderboard() {
-    root.close()
-    var url = "https://omastat.ozan-zdil.workers.dev/dashboard?my=" + encodeURIComponent(root.archetypeSignature) + "#leaderboard"
-    launchProc.command = ["xdg-open", url]
-    launchDeadlineTimer.restart()
-    launchProc.running = true
+  // Omarchy's launchers when present (default browser / terminal, uwsm-scoped, focus an
+  // existing window), plain XDG tools otherwise. Detached so nothing is tied to the shell.
+  function openUrl(url) {
+    Quickshell.execDetached(["/bin/sh", "-c",
+      'if command -v omarchy-launch-browser >/dev/null 2>&1; then exec omarchy-launch-browser "$1"; else exec xdg-open "$1"; fi',
+      "omarank-open", String(url)])
   }
 
+  function openWebLeaderboard() {
+    root.close()
+    root.openUrl("https://omastat.ozan-zdil.workers.dev/dashboard?my=" + encodeURIComponent(root.archetypeSignature) + "#leaderboard")
+  }
+
+  // Opens the terminal benchmark & ladder. Never the standalone QML window: that would be a
+  // second Quickshell process, which Omarchy plugins must not start.
   function launchDashboard() {
     root.close()
     var dashPath = Qt.resolvedUrl("omarank-dashboard").toString().replace(/^file:\/\//, "")
-    // Detached: the dashboard is a long-lived window/terminal, so it must not be bound to
-    // launchDeadlineTimer, which killed it after 5 seconds.
-    dashboardProc.command = [dashPath]
-    dashboardProc.startDetached()
+    Quickshell.execDetached(["/bin/sh", "-c",
+      'if command -v omarchy-launch-or-focus-tui >/dev/null 2>&1; then exec omarchy-launch-or-focus-tui --app-id=org.omarchy.omarank "$1" --cli; else exec xdg-terminal-exec --app-id=org.omarchy.omarank -e "$1" --cli; fi',
+      "omarank-dashboard", dashPath])
   }
 
   function triggerSurvey() {
@@ -172,7 +196,7 @@ Panel {
 
   Process {
     id: statusProc
-    command: [root.resolveEnginePath(), "--json"]
+    command: root.engineCommand(["--json"])
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -186,7 +210,7 @@ Panel {
           root.tierGrade = root.cleanSanitized(d.grade || "", 3)
           root.tierIcon = root.cleanSanitized(d.tier_icon || "󰢮", 8)
           root.rankNerdIcon = root.cleanSanitized(d.tier_nerd_icon || root.rankNerdIconFor(root.totalScore), 8)
-          root.tierColor = root.cleanSanitized(d.tier_color || "#38bdf8", 16)
+          root.tierColor = root.cleanSanitized(d.tier_color || "", 16)
           root.tierQuote = root.cleanSanitized(d.tier_quote || "", 140)
           root.percentileText = root.cleanSanitized(d.percentile_text || "", 100)
           root.rankIsEstimate = d.rank_is_estimate !== false
@@ -253,7 +277,7 @@ Panel {
 
   Process {
     id: surveyProc
-    command: [root.resolveEnginePath(), "--submit-survey"]
+    command: root.engineCommand(["--submit-survey"])
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -271,7 +295,7 @@ Panel {
 
   Process {
     id: surveyPreviewProc
-    command: [root.resolveEnginePath(), "--survey-preview"]
+    command: root.engineCommand(["--survey-preview"])
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -283,10 +307,6 @@ Panel {
 
   Process {
     id: copyProc
-  }
-
-  Process {
-    id: dashboardProc
   }
 
   FileView {
@@ -312,28 +332,11 @@ Panel {
     onFileChanged: reload()
   }
 
-  Process {
-    id: launchProc
-    onExited: function(exitCode) {
-      launchDeadlineTimer.stop()
-    }
-  }
-
-  Timer {
-    id: launchDeadlineTimer
-    interval: 5000
-    repeat: false
-    onTriggered: {
-      if (launchProc.running) launchProc.running = false
-    }
-  }
-
   Component.onDestruction: {
     if (statusProc.running) statusProc.running = false
     if (surveyProc.running) surveyProc.running = false
     if (surveyPreviewProc.running) surveyPreviewProc.running = false
     if (copyProc.running) copyProc.running = false
-    if (launchProc.running) launchProc.running = false
   }
 
   Component.onCompleted: root.refresh()
@@ -378,12 +381,15 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    // Lazy content (Omarchy plugin contract): the card is built on first open, not at shell
+    // startup on every monitor. Timers, processes and IPC stay outside it.
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(520))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      implicitHeight: column.implicitHeight
       anchors.fill: parent
       onCloseRequested: {
         if (root.showAboutModal) {
@@ -408,11 +414,19 @@ Panel {
         // Survey submission stays on its button only: it sends data, so no single-key shortcut.
       }
 
+      // Scrolls when the screen (or a large [font] base-size) leaves less room than the card needs
+      Flickable {
+        id: panelFlick
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: contentHeight > height
+
       Column {
         id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        width: panelFlick.width
         spacing: Style.space(12)
 
       // ---------- Hero Header (Matching Omarchy Network Panel) ----------
@@ -424,7 +438,7 @@ Panel {
           id: heroIcon
           textFormat: Text.PlainText
           text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
-          color: root.bar ? root.bar.foreground : Color.foreground
+          color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.display
           anchors.left: parent.left
@@ -441,7 +455,7 @@ Panel {
             id: aboutAction
             iconText: "󰋽"
             tooltipText: "About & Imprint"
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             iconSize: Style.font.subtitle * 1.3
             horizontalPadding: Style.space(5)
@@ -454,7 +468,7 @@ Panel {
             id: refreshAction
             iconText: "󰑐"
             tooltipText: "Re-check specs"
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             iconSize: Style.font.subtitle * 1.3
             horizontalPadding: Style.space(5)
@@ -467,7 +481,7 @@ Panel {
             id: dashAction
             iconText: "󰍹"
             tooltipText: "Open Terminal Dashboard"
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             iconSize: Style.font.subtitle * 1.3
             horizontalPadding: Style.space(5)
@@ -491,7 +505,7 @@ Panel {
             textFormat: Text.PlainText
             width: parent.width
             text: root.tierName
-            color: root.bar ? root.bar.foreground : Color.foreground
+            color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
@@ -503,7 +517,7 @@ Panel {
             textFormat: Text.PlainText
             width: parent.width
             text: (root.globalRank > 0 ? ((root.rankIsEstimate ? "EST. RANK ~#" : "WORLD RANK #") + root.fmtInt(root.globalRank) + " • ") : "") + (root.tierGrade ? ("GRADE " + root.tierGrade + " • ") : "") + "SCORE: " + (root.totalScore > 0 ? root.totalScore : "--") + " / 100"
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            color: Qt.darker(root.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
@@ -531,7 +545,7 @@ Panel {
               text: "󰍛"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Processor" }
@@ -549,7 +563,7 @@ Panel {
               text: "󰢮"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Graphics" }
@@ -567,7 +581,7 @@ Panel {
               text: "󰘚"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Memory" }
@@ -585,7 +599,7 @@ Panel {
               text: "󰋊"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Storage" }
@@ -603,7 +617,7 @@ Panel {
               text: "󰌢"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Display" }
@@ -621,7 +635,7 @@ Panel {
               text: "󱤓"
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.5
             }
             InfoLabel { text: "Motherboard" }
@@ -639,20 +653,15 @@ Panel {
           implicitHeight: Style.space(22)
 
           // Left: Battlestation ID Copier
-          Rectangle {
+          BorderSurface {
             id: idCopyBtn
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
             width: idRow.implicitWidth + Style.space(12)
-            radius: Style.space(4)
-            color: idMouse.containsMouse
-              ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
-              : "transparent"
-            border.color: idMouse.containsMouse
-              ? (Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground))
-              : "transparent"
-            border.width: 1
+            radius: Style.cornerRadius
+            color: idMouse.containsMouse ? root.hoverFill : "transparent"
+            borderSpec: idMouse.containsMouse ? Border.controlSpec("hover-cursor", root.foreground, Commons.Color.accent) : Border.none()
 
             RowLayout {
               id: idRow
@@ -664,7 +673,7 @@ Panel {
                 text: "󰌽"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: root.bar ? root.bar.foreground : Color.foreground
+                color: root.foreground
                 opacity: idMouse.containsMouse ? 0.9 : 0.4
               }
 
@@ -673,7 +682,7 @@ Panel {
                 text: "ID: " + root.battlestationId
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: root.bar ? root.bar.foreground : Color.foreground
+                color: root.foreground
                 opacity: idMouse.containsMouse ? 1.0 : 0.6
                 font.bold: idMouse.containsMouse
               }
@@ -683,7 +692,7 @@ Panel {
                 text: "󰆏"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+                color: Commons.Color.accent
                 opacity: idMouse.containsMouse ? 1.0 : 0.4
               }
             }
@@ -711,25 +720,20 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
-            color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+            color: Commons.Color.accent
             anchors.centerIn: parent
           }
 
           // Right: Archetype Signature Copier
-          Rectangle {
+          BorderSurface {
             id: archCopyBtn
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
             width: archRow.implicitWidth + Style.space(12)
-            radius: Style.space(4)
-            color: archMouse.containsMouse
-              ? (Color.accent ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.15) : Qt.rgba(1, 1, 1, 0.08))
-              : "transparent"
-            border.color: archMouse.containsMouse
-              ? (Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground))
-              : "transparent"
-            border.width: 1
+            radius: Style.cornerRadius
+            color: archMouse.containsMouse ? root.hoverFill : "transparent"
+            borderSpec: archMouse.containsMouse ? Border.controlSpec("hover-cursor", root.foreground, Commons.Color.accent) : Border.none()
 
             RowLayout {
               id: archRow
@@ -741,7 +745,7 @@ Panel {
                 text: "󰚥"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: root.bar ? root.bar.foreground : Color.foreground
+                color: root.foreground
                 opacity: archMouse.containsMouse ? 0.9 : 0.4
               }
 
@@ -750,7 +754,7 @@ Panel {
                 text: root.archetypeSignature
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: root.bar ? root.bar.foreground : Color.foreground
+                color: root.foreground
                 opacity: archMouse.containsMouse ? 1.0 : 0.6
                 font.bold: archMouse.containsMouse
               }
@@ -760,7 +764,7 @@ Panel {
                 text: "󰆏"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
-                color: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+                color: Commons.Color.accent
                 opacity: archMouse.containsMouse ? 1.0 : 0.4
               }
             }
@@ -784,7 +788,7 @@ Panel {
 
       // ---------- Sub-Scores Section Separator ----------
       PanelSeparator {
-        foreground: root.bar ? root.bar.foreground : Color.foreground
+        foreground: root.foreground
       }
 
       // ---------- Sub-Scores Breakdown (Exact DNS Provider Segmented Pill Row) ----------
@@ -794,7 +798,7 @@ Panel {
 
         PanelSectionHeader {
           text: "SUB-SCORES BREAKDOWN"
-          foreground: root.bar ? root.bar.foreground : Color.foreground
+          foreground: root.foreground
           fontFamily: root.fontFamily
         }
 
@@ -846,7 +850,7 @@ Panel {
 
       // ---------- Verdict Section Separator ----------
       PanelSeparator {
-        foreground: root.bar ? root.bar.foreground : Color.foreground
+        foreground: root.foreground
       }
 
       // ---------- System Verdict Card (Exact Known Networks Box Style) ----------
@@ -856,7 +860,7 @@ Panel {
 
         PanelSectionHeader {
           text: "SYSTEM VERDICT"
-          foreground: root.bar ? root.bar.foreground : Color.foreground
+          foreground: root.foreground
           fontFamily: root.fontFamily
         }
 
@@ -865,9 +869,8 @@ Panel {
           width: parent.width
           implicitHeight: verdictRow.implicitHeight + Style.space(16)
           radius: Style.cornerRadius
-          color: Qt.rgba(0, 0, 0, 0.25)
-          border.color: Qt.rgba(root.bar ? root.bar.foreground.r : 1, root.bar ? root.bar.foreground.g : 1, root.bar ? root.bar.foreground.b : 1, 0.22)
-          border.width: 1
+          color: root.cardFill
+          borderSpec: root.cardBorderSpec
 
           RowLayout {
             id: verdictRow
@@ -881,7 +884,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.rankNerdIcon || root.rankNerdIconFor(root.totalScore)
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
               Layout.alignment: Qt.AlignVCenter
@@ -896,7 +899,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.tierName
-                  color: root.bar ? root.bar.foreground : Color.foreground
+                  color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
                   font.bold: true
@@ -905,7 +908,7 @@ Panel {
                   visible: root.percentileText.length > 0
                   textFormat: Text.PlainText
                   text: "• " + root.percentileText
-                  color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                  color: Qt.darker(root.foreground, 1.4)
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
@@ -914,7 +917,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: "“" + root.tierQuote + "”"
-                color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                color: Qt.darker(root.foreground, 1.4)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap
@@ -925,7 +928,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: (root.totalScore > 0 ? String(root.totalScore) : "--") + " pts"
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               font.bold: true
@@ -937,7 +940,7 @@ Panel {
 
       // ---------- Action Buttons Separator ----------
       PanelSeparator {
-        foreground: root.bar ? root.bar.foreground : Color.foreground
+        foreground: root.foreground
       }
 
       // ---------- Action Buttons ----------
@@ -954,7 +957,7 @@ Panel {
             bordered: true
             text: root.isSubmittingSurvey ? "Submitting to OmaStat..." : "Submit Anonymous Specs to OmaStat"
             fontSize: Style.font.bodySmall
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             horizontalPadding: Style.spacing.controlPaddingX
             verticalPadding: Style.spacing.controlPaddingY
@@ -967,7 +970,7 @@ Panel {
             text: root.showSurveyPreview ? "Hide data" : "Preview data"
             tooltipText: "Show the exact JSON the survey would send"
             fontSize: Style.font.caption
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             horizontalPadding: Style.space(8)
             verticalPadding: Style.spacing.controlPaddingY
@@ -981,9 +984,8 @@ Panel {
           width: parent.width
           implicitHeight: Style.space(160)
           radius: Style.cornerRadius
-          color: Qt.rgba(0, 0, 0, 0.25)
-          border.color: Qt.rgba(root.bar ? root.bar.foreground.r : 1, root.bar ? root.bar.foreground.g : 1, root.bar ? root.bar.foreground.b : 1, 0.22)
-          border.width: 1
+          color: root.cardFill
+          borderSpec: root.cardBorderSpec
 
           Flickable {
             id: previewFlick
@@ -1000,9 +1002,9 @@ Panel {
               textFormat: Text.PlainText
               text: root.surveyPreviewText
               wrapMode: Text.WrapAnywhere
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.foreground
               opacity: 0.85
-              font.family: "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
           }
@@ -1012,8 +1014,9 @@ Panel {
           visible: root.surveyStatusMsg.length > 0
           textFormat: Text.PlainText
           text: root.surveyStatusMsg
+          font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          color: root.bar ? root.bar.foreground : Color.foreground
+          color: root.foreground
           anchors.horizontalCenter: parent.horizontalCenter
         }
 
@@ -1022,7 +1025,7 @@ Panel {
           bordered: true
           text: "Open Terminal Benchmark & Ladder"
           fontSize: Style.font.bodySmall
-          foreground: root.bar ? root.bar.foreground : Color.foreground
+          foreground: root.foreground
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
@@ -1034,7 +1037,7 @@ Panel {
           bordered: true
           text: "View Global Leaderboard 󰄵"
           fontSize: Style.font.bodySmall
-          foreground: Color.accent ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+          foreground: Commons.Color.accent
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
@@ -1047,12 +1050,13 @@ Panel {
           text: "About & Developer Info"
           iconText: "󰋽"
           fontSize: Style.font.bodySmall
-          foreground: root.foreground ? root.foreground : (root.bar ? root.bar.foreground : Color.foreground)
+          foreground: root.foreground
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
           onClicked: root.showAboutModal = !root.showAboutModal
         }
+      }
       }
     }
 
@@ -1061,7 +1065,8 @@ Panel {
       id: aboutOverlay
       anchors.fill: parent
       visible: root.showAboutModal
-      color: Qt.rgba(0.05, 0.05, 0.07, 0.96)
+      // The popup surface itself, so the overlay follows the theme instead of a fixed near-black
+      color: Commons.Color.popups.background
       z: 99
 
       MouseArea {
@@ -1087,40 +1092,30 @@ Panel {
               Text {
                 id: aboutTitleText
                 text: root.pluginName
-                color: root.bar ? root.bar.foreground : Color.foreground
+                color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
                 font.bold: true
               }
 
-              Rectangle {
-                visible: root.pluginVerified
-                implicitWidth: verifBadgeText.implicitWidth + Style.space(8)
-                implicitHeight: Style.space(18)
-                radius: Style.space(4)
-                color: Qt.rgba(0.13, 0.77, 0.37, 0.18)
-                border.color: "#22c55e"
-                border.width: 1
+              Text {
+                visible: root.pluginVersion.length > 0
+                textFormat: Text.PlainText
+                text: "v" + root.pluginVersion
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
                 anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                  id: verifBadgeText
-                  anchors.centerIn: parent
-                  text: "VERIFIED"
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption - 2
-                  font.bold: true
-                  color: "#22c55e"
-                }
               }
             }
           }
 
           Button {
             id: closeAboutBtn
-            text: "✕"
+            iconText: "󰅖"
+            tooltipText: "Close (Esc)"
             bordered: true
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.foreground
             fontFamily: root.fontFamily
             fontSize: Style.font.caption
             onClicked: root.showAboutModal = false
@@ -1130,8 +1125,9 @@ Panel {
         Text {
           width: parent.width
           wrapMode: Text.WordWrap
-          text: "Sürüm: " + root.pluginVersion + "\nGeliştirici: " + root.pluginAuthor + "\nLisans: " + root.pluginLicense + "\n\n" + root.pluginDescription
-          color: root.bar ? root.bar.foreground : Color.foreground
+          textFormat: Text.PlainText
+          text: "Author: " + root.pluginAuthor + "\nLicense: " + root.pluginLicense + "\n\n" + root.pluginDescription
+          color: root.foreground
           opacity: 0.85
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -1140,7 +1136,7 @@ Panel {
 
         PanelSeparator {
           width: parent.width
-          foreground: root.bar ? root.bar.foreground : Color.foreground
+          foreground: root.foreground
         }
 
         Button {
@@ -1148,11 +1144,11 @@ Panel {
           text: "GitHub / Contact"
           iconText: "󰊤"
           bordered: true
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.foreground
+          accent: Commons.Color.accent
           fontFamily: root.fontFamily
           fontSize: Style.font.caption
-          onClicked: Qt.openUrlExternally("https://github.com/ozdil")
+          onClicked: root.openUrl("https://github.com/ozdil/omarchy-omarank")
         }
 
         Button {
@@ -1160,11 +1156,10 @@ Panel {
           text: "Buy Me a Coffee"
           iconText: "󰅖"
           bordered: true
-          foreground: "#000000"
-          color: "#FFDD00"
+          foreground: root.foreground
           fontFamily: root.fontFamily
           fontSize: Style.font.caption
-          onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
+          onClicked: root.openUrl("https://buymeacoffee.com/ozdil")
         }
       }
     }
@@ -1180,7 +1175,7 @@ Panel {
     text: label
     tooltipText: tooltip
     fontSize: Style.font.bodySmall
-    foreground: root.bar ? root.bar.foreground : Color.foreground
+    foreground: root.foreground
     fontFamily: root.fontFamily
     horizontalPadding: Style.space(4)
     verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
@@ -1190,7 +1185,7 @@ Panel {
   // Label text matching Omarchy InfoLabel
   component InfoLabel: Text {
     textFormat: Text.PlainText
-    color: root.bar ? root.bar.foreground : Color.foreground
+    color: root.foreground
     opacity: 0.6
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
@@ -1199,7 +1194,7 @@ Panel {
   // Value text matching Omarchy InfoValue
   component InfoValue: Text {
     textFormat: Text.PlainText
-    color: root.bar ? root.bar.foreground : Color.foreground
+    color: root.foreground
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
   }

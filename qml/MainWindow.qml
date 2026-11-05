@@ -8,6 +8,23 @@ import "theme"
 Item {
     id: root
 
+    // Keyboard-first, like every Omarchy surface: Esc closes, R refreshes,
+    // Shift+R re-scans hardware, C copies the archetype signature.
+    signal closeRequested()
+    focus: true
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape || (event.key === Qt.Key_Q && !(event.modifiers & Qt.ControlModifier))) {
+            root.closeRequested();
+        } else if (event.key === Qt.Key_R) {
+            if (event.modifiers & Qt.ShiftModifier) root.rescan(); else root.refresh();
+        } else if (event.key === Qt.Key_C) {
+            root.copy("Archetype", root.archetypeSignature);
+        } else {
+            return;
+        }
+        event.accepted = true;
+    }
+
     property int totalScore: 0
     property int globalRank: 0
     property int totalMachines: 0
@@ -220,7 +237,7 @@ Item {
         color: cardArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
         border.color: cardArea.containsMouse ? Theme.borderLight : Theme.border
         border.width: 1
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: Theme.duration(120); easing.type: Easing.InOutQuad } }
 
         RowLayout {
             anchors.fill: parent
@@ -423,7 +440,7 @@ Item {
                             font.pixelSize: 13
                             color: Theme.textMain
                             RotationAnimator on rotation {
-                                running: root.loading
+                                running: root.loading && !Theme.reduceMotion
                                 from: 0; to: 360; duration: 900
                                 loops: Animation.Infinite
                                 onRunningChanged: if (!running) parent.rotation = 0
@@ -478,7 +495,7 @@ Item {
                             property real progress: Math.max(0, Math.min(100, root.totalScore)) / 100
                             property color trackColor: Theme.bgDark
                             property color fillColor: root.tierColor
-                            Behavior on progress { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
+                            Behavior on progress { NumberAnimation { duration: Theme.duration(250); easing.type: Easing.OutCubic } }
                             onProgressChanged: requestPaint()
                             onTrackColorChanged: requestPaint()
                             onFillColorChanged: requestPaint()
@@ -530,7 +547,7 @@ Item {
                             anchors.bottom: parent.bottom
                             width: 46
                             height: 24
-                            radius: 12
+                            radius: Theme.radiusLg
                             visible: root.grade.length > 0
                             color: Qt.rgba(root.tierColor.r, root.tierColor.g, root.tierColor.b, 0.18)
                             border.color: root.tierColor
@@ -608,15 +625,15 @@ Item {
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 6
-                                radius: 3
+                                radius: Math.min(3, Theme.cornerRadius)
                                 color: Theme.bgDark
 
                                 Rectangle {
                                     width: parent.width * (Math.max(0, Math.min(100, modelData.score)) / 100.0)
                                     height: parent.height
-                                    radius: 3
+                                    radius: Math.min(3, Theme.cornerRadius)
                                     color: Theme.accent
-                                    Behavior on width { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                                    Behavior on width { NumberAnimation { duration: Theme.duration(250); easing.type: Easing.OutCubic } }
                                 }
                             }
                             Text {

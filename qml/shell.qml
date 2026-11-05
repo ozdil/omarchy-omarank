@@ -16,6 +16,7 @@ ShellRoot {
         MainWindow {
             id: mainWin
             anchors.fill: parent
+            onCloseRequested: Qt.quit()
         }
     }
 
